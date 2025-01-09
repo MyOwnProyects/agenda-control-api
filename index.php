@@ -1,48 +1,41 @@
 <?php
-use Phalcon\Mvc\Micro;
 use Phalcon\Di\FactoryDefault;
-use Phalcon\Http\Response;
 use Phalcon\Db\Adapter\Pdo\Postgresql as PdoPostgres;
+use Phalcon\Mvc\Micro;
+use Phalcon\Http\Response;
+
+// Cargar la configuración desde config.php
+$config = require 'config.php';
 
 // Crear el contenedor de inyección de dependencias
 $di = new FactoryDefault();
-$di->set('db', function () {
+$di->set('db', function () use ($config) {
     return new PdoPostgres([
-        'host'      => 'db',          // Nombre del servicio de la base de datos en docker-compose.yml
-        'username'  => 'user',        // Usuario definido en environment
-        'password'  => 'password',    // Contraseña definida en environment
-        'dbname'    => 'agenda_control', // Nombre de la base de datos definida en environment
-        'port'      => 5432           // Puerto interno de PostgreSQL
+        'host'      => $config['database']['host'],
+        'username'  => $config['database']['username'],
+        'password'  => $config['database']['password'],
+        'dbname'    => $config['database']['dbname'],
+        'port'      => $config['database']['port']
     ]);
 });
-
-
 
 // Crear la aplicación Micro y pasarle el contenedor DI
 $app = new Micro($di);
 
-// Definir un servicio básico para manejar rutas
-$app->get('/', function () use ($app) {
-    // Obtener el adaptador de base de datos desde el contenedor DI
-    $db = $app->getDI()->get('db');
-    
-    // Definir el query SQL
-    $phql = "SELECT * FROM cttipo_usuarios";
+// Incluir todas las rutas de la carpeta Rutas
+foreach (glob(__DIR__ . '/Rutas/*.php') as $routeFile) {
+    $route = require $routeFile;
+    $route($app); // Registrar las rutas en $app
+}
 
-    // Ejecutar el query y obtener el resultado
-    $result = $db->query($phql);
-    $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-
-
-    // Recorrer los resultados
-    $data = [];
-    while ($row = $result->fetch()) {
-        $data[] = $row;
-    }
-
-    // Devolver los datos en formato JSON
+// Definir el manejador para rutas no encontradas
+$app->notFound(function () {
     $response = new Response();
-    $response->setJsonContent($data);
+    $response->setStatusCode(404, "Not Found");
+    $response->setJsonContent([
+        'status'  => 'error',
+        'message' => 'La ruta solicitada no existe.'
+    ]);
     return $response;
 });
 
