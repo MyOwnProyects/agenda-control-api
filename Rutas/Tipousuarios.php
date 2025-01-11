@@ -11,7 +11,7 @@ return function (Micro $app,$di) {
     $db = $di->get('db');
 
     // Ruta principal para obtener todos los usuarios
-    $app->get('/tipousuarios/show', function () use ($app,$db,$request) {
+    $app->get('/cttipo_usuarios/show', function () use ($app,$db,$request) {
         try{
             $id = $request->getQuery('id');
             
