@@ -1,8 +1,13 @@
 <?php
+
 use Phalcon\Di\FactoryDefault;
 use Phalcon\Db\Adapter\Pdo\Postgresql as PdoPostgres;
 use Phalcon\Mvc\Micro;
 use Phalcon\Http\Response;
+use Middleware\AuthMiddleware;
+
+// Incluir el autoload de Composer para cargar las clases automáticamente
+require_once __DIR__ . '/vendor/autoload.php';
 
 // Cargar la configuración desde config.php
 $config = require 'config.php';
@@ -22,10 +27,17 @@ $di->set('db', function () use ($config) {
 // Crear la aplicación Micro y pasarle el contenedor DI
 $app = new Micro($di);
 
+// Registrar el middleware y pasar $app manualmente
+/*
+$app->before(function () use ($app) {
+    $middleware = new AuthMiddleware();
+    return $middleware($app);
+});*/
+
 // Incluir todas las rutas de la carpeta Rutas
 foreach (glob(__DIR__ . '/Rutas/*.php') as $routeFile) {
     $route = require $routeFile;
-    $route($app); // Registrar las rutas en $app
+    $route($app, $di); // Registrar las rutas en $app
 }
 
 // Definir el manejador para rutas no encontradas

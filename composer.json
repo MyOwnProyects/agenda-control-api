@@ -1,0 +1,27 @@
+{
+    "name": "agendacontrol/api",
+    "description": "Agenda Control API with Phalcon",
+    "type": "project",
+    "require": {
+        "phalcon/devtools": "^4.0",
+        "php": "^8.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "Middleware\\": "Middleware/",
+            "Rutas\\": "Rutas/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist"
+    },
+    "scripts": {
+        "post-update-cmd": [
+            "composer dump-autoload --optimize"
+        ],
+        "post-install-cmd": [
+            "composer dump-autoload --optimize"
+        ]
+    }
+}

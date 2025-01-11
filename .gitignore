@@ -1,0 +1,5 @@
+.vscode/
+vendor/
+.htaccess
+config.php
+Ruta inicial vacia.txt
