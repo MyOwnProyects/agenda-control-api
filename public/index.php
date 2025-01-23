@@ -7,10 +7,10 @@ use Phalcon\Http\Response;
 use Middleware\AuthMiddleware;
 
 // Incluir el autoload de Composer para cargar las clases automáticamente
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 // Cargar la configuración desde config.php
-$config = require 'config.php';
+$config = require '../config.php';
 
 // Crear el contenedor de inyección de dependencias
 $di = new FactoryDefault();
@@ -35,7 +35,7 @@ $app->before(function () use ($app) {
 });*/
 
 // Incluir todas las rutas de la carpeta Rutas
-foreach (glob(__DIR__ . '/Rutas/*.php') as $routeFile) {
+foreach (glob(__DIR__ . '/..//Rutas/*.php') as $routeFile) {
     $route = require $routeFile;
     $route($app, $di); // Registrar las rutas en $app
 }
@@ -53,3 +53,4 @@ $app->notFound(function () {
 
 // Manejar la solicitud
 $app->handle($_SERVER["REQUEST_URI"]);
+

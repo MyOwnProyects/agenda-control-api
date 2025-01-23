@@ -13,7 +13,8 @@ return function (Micro $app,$di) {
     // Ruta principal para obtener todos los usuarios
     $app->get('/ctusuarios/show', function () use ($app,$db,$request) {
         try{
-            $id = $request->getQuery('id');
+            $id         = $request->getQuery('id');
+            $username   = $request->getQuery('username');
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -29,6 +30,11 @@ return function (Micro $app,$di) {
                 $phql           .= " AND a.id = :id";
                 $values['id']   = $id;
             }
+
+            if ($username != null && $username != ''){
+                $phql               .= " AND lower(a.clave) = :clave";
+                $values['clave']    = mb_strtolower($username, 'UTF-8');
+            }
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -39,6 +45,10 @@ return function (Micro $app,$di) {
             while ($row = $result->fetch()) {
                 $data[] = $row;
             }
+
+            if (count($data) == 0){
+                throw new Exception('Busqueda sin resultados');
+            }
     
             // Devolver los datos en formato JSON
             $response = new Response();
@@ -48,12 +58,57 @@ return function (Micro $app,$di) {
         }catch (\Exception $e){
             // Devolver los datos en formato JSON
             $response = new Response();
-            $response->setJsonContent($e->getMessage());
+            $response->setContent($e->getMessage());
             $response->setStatusCode(400, 'Created');
             return $response;
         }
         
     });
 
-    // Puedes agregar más rutas aquí relacionadas con `cttipo_usuarios`
+    $app->get('/ctusuarios/get_info_usuario', function () use ($app,$db,$request) {
+        try{
+            $id_usuario = $request->getQuery('id_usuario');
+            
+            if ($id_usuario == null || !is_numeric($id_usuario)){
+                throw new Exception("Parametro de id invalido");
+            }
+        
+            // Definir el query SQL
+            $phql   = " SELECT b.controlador,b.accion FROM ctpermisos_usuarios a 
+                        LEFT JOIN ctpermisos b ON a.id_permiso = b.id
+                        WHERE a.id_usuario = :id_usuario
+                        UNION
+                        SELECT a.controlador,a.accion FROM ctpermisos a WHERE a.publico = 1";
+            $values = array(
+                'id_usuario'    => $id_usuario
+            );
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $data = [];
+            while ($row = $result->fetch()) {
+                $data[] = $row;
+            }
+
+            if (count($data) == 0){
+                throw new Exception('Busqueda sin resultados');
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setContent($e->getMessage());
+            $response->setStatusCode(400, 'Created');
+            return $response;
+        }
+        
+    });
 };

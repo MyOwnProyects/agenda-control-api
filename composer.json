@@ -1,9 +1,9 @@
 {
-    "name": "agendacontrol/api",
+    "name": "www/agenda-control-api",
     "description": "Agenda Control API with Phalcon",
     "type": "project",
     "require": {
-        "phalcon/devtools": "^4.0",
+        "phalcon/devtools": "^5.0",
         "php": "^8.2"
     },
     "autoload": {
@@ -23,5 +23,7 @@
         "post-install-cmd": [
             "composer dump-autoload --optimize"
         ]
-    }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
 }
