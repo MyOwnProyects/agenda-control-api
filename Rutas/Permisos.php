@@ -28,9 +28,9 @@ return function (Micro $app,$di) {
                 $values['id']   = $id;
             }
 
-            // if ($request->hasQuery('fromcatalog')){
-            //     $phql   .= " AND a.publico = 0 AND a.visible = 1";
-            // }
+            if ($request->hasQuery('fromcatalog')){
+                $phql   .= " AND a.publico = 0 AND a.visible = 1 ";
+            }
 
             $phql   .= ' ORDER BY a.label_controlador,a.label_accion ';
     

@@ -17,6 +17,7 @@ return function (Micro $app,$di) {
             $clave  = $request->getQuery('clave');
             $nombre = $request->getQuery('nombre');
             $activo = $request->getQuery('activo');
+            $get_permisos   = $request->getQuery('get_permisos');
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -54,6 +55,19 @@ return function (Micro $app,$di) {
             $data = [];
             while ($row = $result->fetch()) {
                 $row['label_estatus']   = $row['activo'] == 1 ? 'Activo' : 'Inactivo'; 
+                //  SE BUSCAN TODOS LOS PERMISOS QUE EL TIPO DE USUARIO TIENE 
+                if (!empty($get_permisos) && is_numeric($id)){
+                    $phql   = "SELECT * FROM ctpermisos_tipo_usuario WHERE id_tipo_usuario = :id";
+                    $result_permisos    = $db->query($phql,$values);
+                    $result_permisos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_permisos){
+                        while($data_permisos = $result_permisos->fetch()){
+                            $row['permisos'][$data_permisos['id_permiso']] = $data_permisos;
+                        }
+                    }
+                }
+                
                 $data[] = $row;
             }
     
