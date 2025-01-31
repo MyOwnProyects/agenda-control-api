@@ -31,9 +31,9 @@ return function (Micro $app,$di) {
                 $values['id']   = $id;
             }
 
-            if ($username != null && $username != ''){
-                $phql               .= " AND lower(a.clave) = :clave";
-                $values['clave']    = mb_strtolower($username, 'UTF-8');
+            if ($username != null && $username != '') {
+                $phql           .= " AND lower(a.clave) ILIKE :clave";
+                $values['clave'] = "%".mb_strtolower($username, 'UTF-8')."%";
             }
     
             // Ejecutar el query y obtener el resultado

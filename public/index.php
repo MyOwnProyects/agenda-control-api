@@ -4,7 +4,10 @@ use Phalcon\Di\FactoryDefault;
 use Phalcon\Db\Adapter\Pdo\Postgresql as PdoPostgres;
 use Phalcon\Mvc\Micro;
 use Phalcon\Http\Response;
+
+//  MIDDLAWARE
 use Middleware\AuthMiddleware;
+use Middleware\JsonMiddleware;
 
 // Incluir el autoload de Composer para cargar las clases automáticamente
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -24,15 +27,25 @@ $di->set('db', function () use ($config) {
     ]);
 });
 
+// 🔹 Registrar el servicio 'request' en el DI (Corrección del error)
+$di->setShared('request', function () {
+    return new \Phalcon\Http\Request();
+});
+
 // Crear la aplicación Micro y pasarle el contenedor DI
 $app = new Micro($di);
 
 // Registrar el middleware y pasar $app manualmente
-/*
 $app->before(function () use ($app) {
     $middleware = new AuthMiddleware();
     return $middleware($app);
-});*/
+});
+
+// Registrar el middleware de JSON
+$app->before(function () use ($app) {
+    $middleware = new JsonMiddleware();
+    return $middleware($app);
+});
 
 // Incluir todas las rutas de la carpeta Rutas
 foreach (glob(__DIR__ . '/..//Rutas/*.php') as $routeFile) {
