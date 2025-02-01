@@ -233,5 +233,89 @@ return function (Micro $app,$di) {
             ])->setStatusCode(400, 'Bad Request');
         }
     });
+
+    $app->put('/cttipo_usuarios/update', function () use ($app, $db, $request) {
+        $conexion = $db; 
+        try {
+            $conexion->begin();
+    
+            // OBTENER DATOS JSON
+            $id             = $request->getPost('id') ?? null;
+            $clave          = $request->getPost('clave') ?? null;
+            $nombre         = $request->getPost('nombre') ?? null;
+            $descripcion    = $request->getPost('descripcion') ?? null;
+            $lista_permisos = $request->getPost('lista_permisos') ?? [];
+    
+            // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
+
+            if (empty($id)) {
+                throw new Exception('Parámetro "id" vacío');
+            }
+
+            if (empty($clave)) {
+                throw new Exception('Parámetro "clave" vacío');
+            }
+    
+            if (empty($nombre)) {
+                throw new Exception('Parámetro "nombre" vacío');
+            }
+    
+            if (empty($lista_permisos) || !is_array($lista_permisos)) {
+                throw new Exception('Lista de permisos vacía o inválida');
+            }
+    
+            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
+            $phql = "SELECT * FROM cttipo_usuarios WHERE clave = :clave AND id <> :id";
+    
+            $result = $db->query($phql, ['clave' => $clave, 'id' => $id]);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            while ($row = $result->fetch()) {
+                throw new Exception('La clave: ' . $clave . ' ya se encuentra registrada');
+            }
+    
+            // INSERTAR NUEVO USUARIO
+            $phql = "UPDATE cttipo_usuarios SET clave = :clave, nombre = :nombre, descripcion = :descripcion WHERE id = :id";
+    
+            $values = [
+                'id'            => $id,
+                'clave'         => $clave,
+                'nombre'        => $nombre,
+                'descripcion'   => $descripcion != null && !empty(trim($descripcion)) ? trim($descripcion) : null
+            ];
+    
+            $result = $conexion->execute($phql, $values);
+
+            //  SE BORRAR LOS PERMISOS ACTUALES
+            $phql   = "DELETE FROM ctpermisos_tipo_usuario WHERE id_tipo_usuario = :id";
+            $result = $conexion->execute($phql, array('id' => $id));
+
+            // INSERTAR LOS PERMISOS
+            $phql = "INSERT INTO ctpermisos_tipo_usuario (id_permiso, id_tipo_usuario) 
+                     VALUES (:id_permiso, :id_tipo_usuario)";
+    
+            foreach ($lista_permisos as $permiso) {
+                $db->query($phql, [
+                    'id_permiso'     => $permiso,
+                    'id_tipo_usuario' => $id
+                ]);
+            }
+    
+            $conexion->commit();
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'ERROR');
+            return $response;
+        }
+    });
     
 };
