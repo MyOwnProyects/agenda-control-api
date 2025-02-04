@@ -2,6 +2,7 @@
 
 use Phalcon\Mvc\Micro;
 use Phalcon\Http\Response;
+use Helpers\FuncionesGlobales;
 
 return function (Micro $app,$di) {
 
@@ -13,15 +14,24 @@ return function (Micro $app,$di) {
     // Ruta principal para obtener todos los usuarios
     $app->get('/ctusuarios/show', function () use ($app,$db,$request) {
         try{
-            $id         = $request->getQuery('id');
-            $username   = $request->getQuery('username');
+            $id     = $request->getQuery('id');
+            $clave  = $request->getQuery('clave');
+            $nombre = $request->getQuery('nombre');
+            $id_tipo_usuario    = $request->getQuery('id_tipo_usuario');
+            $accion             = $request->getQuery('accion') ?? null;
+            $username           = $request->getQuery('username') ?? null;
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
             }
         
             // Definir el query SQL
-            $phql   = "SELECT a.*,b.clave as clave_tipo_usuario, b.nombre as nombre_tio_usuario FROM ctusuarios a 
+            $phql   = "SELECT 
+                            a.*,
+                            (a.primer_apellido|| ' ' ||COALESCE(a.segundo_apellido,'')||' '||a.nombre) as nombre_completo,
+                            b.clave as clave_tipo_usuario, 
+                            b.nombre as nombre_tipo_usuario 
+                        FROM ctusuarios a 
                         LEFT JOIN cttipo_usuarios b ON a.id_tipo_usuario = b.id 
                         WHERE 1 = 1";
             $values = array();
@@ -31,10 +41,27 @@ return function (Micro $app,$di) {
                 $values['id']   = $id;
             }
 
-            if ($username != null && $username != '') {
+            if (!empty($clave) && (empty($accion) || $accion != 'login')) {
                 $phql           .= " AND lower(a.clave) ILIKE :clave";
-                $values['clave'] = "%".mb_strtolower($username, 'UTF-8')."%";
+                $values['clave'] = "%".FuncionesGlobales::ToLower($clave)."%";
             }
+
+            if (!empty($accion) && $accion == 'login'){
+                $phql               .= " AND a.clave = :username";
+                $values['username'] = $username;
+            }
+
+            if (!empty($nombre)) {
+                $phql           .= " AND lower(a.nombre) ILIKE :nombre";
+                $values['clave'] = "%".FuncionesGlobales::ToLower($nombre)."%";
+            }
+
+            if (!empty($id_tipo_usuario)){
+                $phql                       .= " AND a.id_tipo_usuario = :id_tipo_usuario";
+                $values['id_tipo_usuario']  = $id_tipo_usuario;
+            }
+
+            $phql   .= " ORDER BY a.primer_apellido ASC,a.segundo_apellido ASC,a.nombre";
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -110,5 +137,143 @@ return function (Micro $app,$di) {
             return $response;
         }
         
+    });
+
+    $app->post('/ctusuarios/create', function () use ($app, $db, $request) {
+        $conexion = $db; 
+        try {
+            $conexion->begin();
+    
+            // OBTENER DATOS JSON
+            $contrasena         = $request->getPost('contrasena') ?? null;
+            $primer_apellido    = $request->getPost('primer_apellido') ?? null;
+            $segundo_apellido   = $request->getPost('segundo_apellido') ?? null;
+            $nombre             = $request->getPost('nombre') ?? null;
+            $celular            = $request->getPost('celular') ?? null;
+            $correo_electronico = $request->getPost('correo_electronico') ?? null;
+            $id_tipo_usuario    = $request->getPost('id_tipo_usuario') ?? null;
+            $lista_permisos     = $request->getPost('lista_permisos') ?? null;
+    
+            // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
+            if (empty($contrasena)) {
+                throw new Exception('Parámetro "Contrasena" vacío');
+            }
+    
+            if (empty($primer_apellido)) {
+                throw new Exception('Parámetro "Primer apellido" vacío');
+            }
+
+            if (empty($nombre)) {
+                throw new Exception('Parámetro "Nombre" vacío');
+            }
+
+            if (empty($celular)) {
+                throw new Exception('Parámetro "Celular" vacío');
+            }
+
+            if (empty($id_tipo_usuario)) {
+                throw new Exception('Parámetro "Tipo usuario" vacío');
+            }
+    
+            if (empty($lista_permisos) || !is_array($lista_permisos)) {
+                throw new Exception('Lista de permisos vacía o inválida');
+            }
+
+            //  VALIDAR PARAMETROS
+            $hash_contrasena    = hash('sha256', $contrasena);
+
+            if (!FuncionesGlobales::validarTelefono($celular)){
+                throw new Exception('Parámetro "Celular" invalido');
+            }
+
+            if (!empty($correo_electronico) && !FuncionesGlobales::validarCorreo($correo_electronico)){
+                throw new Exception('Parámetro "Correo electronico" invalido.');
+            }
+    
+            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
+            $phql = "SELECT * FROM ctusuarios WHERE clave = :clave";
+    
+            $result = $db->query($phql, ['clave' => $celular]);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            while ($row = $result->fetch()) {
+                throw new Exception('La clave: ' . $clave . ' ya se encuentra registrada');
+            }
+    
+            // INSERTAR NUEVO USUARIO
+            $phql = "INSERT INTO ctusuarios (
+                                    clave, 
+                                    contrasena, 
+                                    primer_apellido,
+                                    segundo_apellido,
+                                    nombre,
+                                    celular,
+                                    correo_electronico,
+                                    id_tipo_usuario
+                                ) 
+                     VALUES (
+                                :clave, 
+                                :contrasena, 
+                                :primer_apellido,
+                                :segundo_apellido,
+                                :nombre,
+                                :celular,
+                                :correo_electronico,
+                                :id_tipo_usuario
+                            ) RETURNING id";
+    
+            $values = [
+                'clave'                 => $celular,
+                'contrasena'            => $hash_contrasena,
+                'primer_apellido'       => $primer_apellido,
+                'segundo_apellido'      => $segundo_apellido,
+                'nombre'                => $nombre,
+                'celular'               => $celular,
+                'correo_electronico'    => $correo_electronico,
+                'id_tipo_usuario'       => $id_tipo_usuario,
+                
+            ];
+    
+            $result = $conexion->query($phql, $values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            $id_usuario = null;
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    $id_usuario = $data['id'];
+                }
+            }
+    
+            if (!$id_usuario) {
+                throw new Exception('Error al insertar el usuario');
+            }
+    
+            // INSERTAR LOS PERMISOS
+            $phql = "INSERT INTO ctpermisos_usuarios (id_permiso, id_usuario) 
+                     VALUES (:id_permiso, :id_usuario)";
+    
+            foreach ($lista_permisos as $permiso) {
+                $db->query($phql, [
+                    'id_permiso'    => $permiso,
+                    'id_usuario'    => $id_tipo_usuario
+                ]);
+            }
+    
+            $conexion->commit();
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $conexion->rollback();
+            
+            return (new Response())->setJsonContent([
+                'status'  => 'error',
+                'message' => $e->getMessage()
+            ])->setStatusCode(400, 'Bad Request');
+        }
     });
 };

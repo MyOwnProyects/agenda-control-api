@@ -9,7 +9,8 @@
     "autoload": {
         "psr-4": {
             "Middleware\\": "Middleware/",
-            "Rutas\\": "Rutas/"
+            "Rutas\\": "Rutas/",
+	        "Helpers\\" : "Helpers/"
         }
     },
     "config": {

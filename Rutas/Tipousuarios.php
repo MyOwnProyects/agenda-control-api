@@ -55,7 +55,6 @@ return function (Micro $app,$di) {
             $data = [];
             while ($row = $result->fetch()) {
                 $row['label_estatus']       = $row['activo'] == 1 ? 'Activo' : 'Inactivo'; 
-                $row['label_disponible']    = $row['disponible_agenda'] == 1 ? 'SI' : 'NO'; 
                 //  SE BUSCAN TODOS LOS PERMISOS QUE EL TIPO DE USUARIO TIENE 
                 if (!empty($get_permisos) && is_numeric($id)){
                     $phql   = "SELECT * FROM ctpermisos_tipo_usuario WHERE id_tipo_usuario = :id";
@@ -96,7 +95,6 @@ return function (Micro $app,$di) {
             $clave          = $this->request->getPost('clave') ?? null;
             $nombre         = $this->request->getPost('nombre') ?? null;
             $descripcion    = $this->request->getPost('descripcion') ?? null;
-            $disponible_agenda  = $this->request->getPost('disponible_agenda') ?? null;
             $lista_permisos     = $this->request->getPost('lista_permisos') ?? [];
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
@@ -123,14 +121,13 @@ return function (Micro $app,$di) {
             }
     
             // INSERTAR NUEVO USUARIO
-            $phql = "INSERT INTO cttipo_usuarios (clave, nombre, descripcion,disponible_agenda) 
-                     VALUES (:clave, :nombre, :descripcion,:disponible_agenda) RETURNING id";
+            $phql = "INSERT INTO cttipo_usuarios (clave, nombre, descripcion) 
+                     VALUES (:clave, :nombre, :descripcion) RETURNING id";
     
             $values = [
                 'clave'       => $clave,
                 'nombre'      => $nombre,
                 'descripcion' => $descripcion != null && !empty(trim($descripcion)) ? trim($descripcion) : null,
-                'disponible_agenda' => $disponible_agenda
             ];
     
             $result = $conexion->query($phql, $values);
@@ -247,7 +244,6 @@ return function (Micro $app,$di) {
             $clave          = $request->getPost('clave') ?? null;
             $nombre         = $request->getPost('nombre') ?? null;
             $descripcion    = $request->getPost('descripcion') ?? null;
-            $disponible_agenda  = $request->getPost('disponible_agenda') ?? null;
             $lista_permisos     = $request->getPost('lista_permisos') ?? [];
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
@@ -279,13 +275,12 @@ return function (Micro $app,$di) {
             }
     
             // INSERTAR NUEVO USUARIO
-            $phql = "UPDATE cttipo_usuarios SET clave = :clave, nombre = :nombre, descripcion = :descripcion, disponible_agenda = :disponible_agenda WHERE id = :id";
+            $phql = "UPDATE cttipo_usuarios SET clave = :clave, nombre = :nombre, descripcion = :descripcion WHERE id = :id";
     
             $values = [
                 'id'            => $id,
                 'clave'         => $clave,
                 'nombre'        => $nombre,
-                'disponible_agenda' => $disponible_agenda,
                 'descripcion'       => $descripcion != null && !empty(trim($descripcion)) ? trim($descripcion) : null
             ];
     
