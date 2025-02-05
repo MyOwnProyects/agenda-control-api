@@ -70,6 +70,7 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $data = [];
             while ($row = $result->fetch()) {
+                $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
                 $data[] = $row;
             }
 
@@ -255,7 +256,7 @@ return function (Micro $app,$di) {
             foreach ($lista_permisos as $permiso) {
                 $db->query($phql, [
                     'id_permiso'    => $permiso,
-                    'id_usuario'    => $id_tipo_usuario
+                    'id_usuario'    => $id_usuario
                 ]);
             }
     
@@ -270,6 +271,49 @@ return function (Micro $app,$di) {
         } catch (\Exception $e) {
             $conexion->rollback();
             
+            return (new Response())->setJsonContent([
+                'status'  => 'error',
+                'message' => $e->getMessage()
+            ])->setStatusCode(400, 'Bad Request');
+        }
+    });
+
+    $app->put('/ctusuarios/change_status', function () use ($app, $db) {
+        try{
+            //  SE UTILIZARA UN BORRADO LOGICO PARA EVITAR DEJAR
+            //  A LOS USUARIOS SIN UN TIPO
+            $id_usuario     = $this->request->getPost('id');
+            $estatus        = '';
+            $flag_exists    = false;
+
+            $phql   = "SELECT * FROM ctusuarios WHERE id = :id_usuario";
+            $result = $db->query($phql, array('id_usuario' => $id_usuario));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while ($row = $result->fetch()) {
+                $estatus    = $row['estatus'];
+            }
+
+            if ($estatus == ''){
+                throw new Exception("Registro inexistente en el catalogo");
+            }
+
+            $estatus = $estatus == 1 ? 0 : 1;
+
+            //  EN CASO DE DESACTIVAR SOLO SE CAMBIA EL ESTATUS DEL REGISTRO
+            $phql   = "UPDATE ctusuarios SET estatus = :estatus WHERE id = :id";
+            $result = $db->execute($phql, array(
+                'estatus'   => $estatus,
+                'id'        => $id_usuario
+            ));
+
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e) {
             return (new Response())->setJsonContent([
                 'status'  => 'error',
                 'message' => $e->getMessage()
