@@ -70,6 +70,7 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $data = [];
             while ($row = $result->fetch()) {
+                $row['contrasena']      = $request->hasQuery('fromCatalog') ? null : $row['contrasena'];
                 $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
                 $data[] = $row;
             }
@@ -102,11 +103,11 @@ return function (Micro $app,$di) {
             }
         
             // Definir el query SQL
-            $phql   = " SELECT b.controlador,b.accion FROM ctpermisos_usuarios a 
+            $phql   = " SELECT b.id,b.controlador,b.accion FROM ctpermisos_usuarios a 
                         LEFT JOIN ctpermisos b ON a.id_permiso = b.id
                         WHERE a.id_usuario = :id_usuario
                         UNION
-                        SELECT a.controlador,a.accion FROM ctpermisos a WHERE a.publico = 1";
+                        SELECT a.id,a.controlador,a.accion FROM ctpermisos a WHERE a.publico = 1";
             $values = array(
                 'id_usuario'    => $id_usuario
             );
@@ -118,7 +119,7 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $data = [];
             while ($row = $result->fetch()) {
-                $data[] = $row;
+                $data[$row['id']]   = $row;
             }
 
             if (count($data) == 0){
@@ -314,6 +315,132 @@ return function (Micro $app,$di) {
             return $response;
 
         }catch (\Exception $e) {
+            return (new Response())->setJsonContent([
+                'status'  => 'error',
+                'message' => $e->getMessage()
+            ])->setStatusCode(400, 'Bad Request');
+        }
+    });
+
+    $app->delete('/ctusuarios/delete', function () use ($app, $db) {
+        try{
+            //  SE UTILIZARA UN BORRADO LOGICO PARA EVITAR DEJAR
+            //  A LOS USUARIOS SIN UN TIPO
+            $id     = $this->request->getPost('id');
+
+            $phql   = "DELETE FROM ctusuarios WHERE id = :id";
+            $result = $db->execute($phql, array('id' => $id));
+
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e) {
+            return (new Response())->setJsonContent([
+                'status'  => 'error',
+                'message' => $e->getMessage()
+            ])->setStatusCode(400, 'Bad Request');
+        }
+    });
+
+    $app->put('/ctusuarios/update', function () use ($app, $db, $request) {
+        $conexion = $db; 
+        try {
+            $conexion->begin();
+    
+            // OBTENER DATOS JSON
+            $id                 = $request->getPost('id') ?? null;
+            $primer_apellido    = $request->getPost('primer_apellido') ?? null;
+            $segundo_apellido   = $request->getPost('segundo_apellido') ?? null;
+            $nombre             = $request->getPost('nombre') ?? null;
+            $celular            = $request->getPost('celular') ?? null;
+            $correo_electronico = $request->getPost('correo_electronico') ?? null;
+            $id_tipo_usuario    = $request->getPost('id_tipo_usuario') ?? null;
+            $lista_permisos     = $request->getPost('lista_permisos') ?? null;
+    
+            // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
+
+            if (empty($id)) {
+                throw new Exception('Parámetro "Identificador" vacío');
+            }
+
+            if (empty($primer_apellido)) {
+                throw new Exception('Parámetro "Primer apellido" vacío');
+            }
+
+            if (empty($nombre)) {
+                throw new Exception('Parámetro "Nombre" vacío');
+            }
+
+            if (empty($celular)) {
+                throw new Exception('Parámetro "Celular" vacío');
+            }
+
+            if (empty($id_tipo_usuario)) {
+                throw new Exception('Parámetro "Tipo usuario" vacío');
+            }
+    
+            if (empty($lista_permisos) || !is_array($lista_permisos)) {
+                throw new Exception('Lista de permisos vacía o inválida');
+            }
+
+            if (!FuncionesGlobales::validarTelefono($celular)){
+                throw new Exception('Parámetro "Celular" invalido');
+            }
+
+            if (!empty($correo_electronico) && !FuncionesGlobales::validarCorreo($correo_electronico)){
+                throw new Exception('Parámetro "Correo electronico" invalido.');
+            }
+    
+            // INSERTAR NUEVO USUARIO
+            $phql = "UPDATE ctusuarios SET
+                                    primer_apellido = :primer_apellido,
+                                    segundo_apellido = :segundo_apellido,
+                                    nombre = :nombre,
+                                    celular = :celular,
+                                    correo_electronico = :correo_electronico,
+                                    id_tipo_usuario = :id_tipo_usuario WHERE id = :id";
+    
+            $values = [
+                'primer_apellido'       => $primer_apellido,
+                'segundo_apellido'      => $segundo_apellido,
+                'nombre'                => $nombre,
+                'celular'               => $celular,
+                'correo_electronico'    => $correo_electronico,
+                'id_tipo_usuario'       => $id_tipo_usuario,
+                'id'                    => $id
+            ];
+    
+            $result = $conexion->execute($phql, $values);
+
+            //  SE BORRAR LOS PERMISOS ACTUALES
+            $phql   = "DELETE FROM ctpermisos_usuarios WHERE id_usuario = :id";
+            $result = $conexion->execute($phql, array('id' => $id));
+    
+            // INSERTAR LOS PERMISOS
+            $phql = "INSERT INTO ctpermisos_usuarios (id_permiso, id_usuario) 
+                     VALUES (:id_permiso, :id_usuario)";
+    
+            foreach ($lista_permisos as $permiso) {
+                $db->query($phql, [
+                    'id_permiso'    => $permiso,
+                    'id_usuario'    => $id
+                ]);
+            }
+    
+            $conexion->commit();
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $conexion->rollback();
+            
             return (new Response())->setJsonContent([
                 'status'  => 'error',
                 'message' => $e->getMessage()

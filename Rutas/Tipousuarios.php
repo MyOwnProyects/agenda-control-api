@@ -270,8 +270,21 @@ return function (Micro $app,$di) {
             $result = $db->query($phql, ['clave' => $clave, 'id' => $id]);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
     
+            $clave_actual   = '';
             while ($row = $result->fetch()) {
                 throw new Exception('La clave: ' . $clave . ' ya se encuentra registrada');
+            }
+
+            //  SI SE QUIERE EDITAR LA CLAVE DE PROF, ESTO LO REESCRIBE
+            $phql = "SELECT * FROM cttipo_usuarios WHERE id = :id";
+    
+            $result = $db->query($phql, ['id' => $id]);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+     
+            while ($row = $result->fetch()) {
+                if ($row['clave'] == 'PROF' || $row == 'PAC'){
+                    $clave  = $row['clave'];
+                }
             }
     
             // INSERTAR NUEVO USUARIO
