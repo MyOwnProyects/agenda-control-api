@@ -22,4 +22,41 @@ class FuncionesGlobales {
     public static function generarToken($longitud = 32) {
         return bin2hex(random_bytes($longitud / 2));
     }
+
+    public static function validarCantidadMonetaria($cantidad) {
+        // Expresión regular para validar números enteros o con hasta dos decimales
+        $regex = '/^\d+(\.\d{1,2})?$/';
+    
+        // Si la cantidad es un número entero sin decimales, la convertimos a string
+        if (is_int($cantidad)) {
+            $cantidad = strval($cantidad);
+        }
+    
+        // Verificar que la cantidad sea un string y que coincida con la expresión regular
+        if (is_string($cantidad) && preg_match($regex, $cantidad)) {
+            $numero = floatval($cantidad);
+            // Verificar que no sea negativo
+            if ($numero >= 0) {
+                return true;
+            }
+        } elseif (is_float($cantidad) || is_int($cantidad)) {
+            // Verificar que no sea negativo y que sea un número
+            if ($cantidad >= 0) {
+                return true;
+            }
+        }
+    
+        // Si no cumple con las condiciones, retornar false
+        return false;
+    }
+
+    public static function formatearDecimal($valor) {
+        // Convertir el valor a float
+        $valor = floatval($valor);
+        
+        // Formatear el valor con 2 decimales
+        $valorFormateado = number_format($valor, 2, '.', '');
+        
+        return $valorFormateado;
+    }
 }
