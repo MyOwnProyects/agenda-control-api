@@ -255,7 +255,7 @@ return function (Micro $app,$di) {
                      VALUES (:id_permiso, :id_usuario)";
     
             foreach ($lista_permisos as $permiso) {
-                $db->query($phql, [
+                $conexion->query($phql, [
                     'id_permiso'    => $permiso,
                     'id_usuario'    => $id_usuario
                 ]);
@@ -424,7 +424,7 @@ return function (Micro $app,$di) {
                      VALUES (:id_permiso, :id_usuario)";
     
             foreach ($lista_permisos as $permiso) {
-                $db->query($phql, [
+                $conexion->query($phql, [
                     'id_permiso'    => $permiso,
                     'id_usuario'    => $id
                 ]);

@@ -46,6 +46,8 @@ return function (Micro $app,$di) {
                 $phql               .= " AND activo = :activo";
                 $values['activo']   = $activo;
             }
+
+            $phql   .= " ORDER BY a.clave,a.nombre ";
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -149,7 +151,7 @@ return function (Micro $app,$di) {
                      VALUES (:id_permiso, :id_tipo_usuario)";
     
             foreach ($lista_permisos as $permiso) {
-                $db->query($phql, [
+                $conexion->query($phql, [
                     'id_permiso'     => $permiso,
                     'id_tipo_usuario' => $id_tipo_usuario
                 ]);
@@ -308,7 +310,7 @@ return function (Micro $app,$di) {
                      VALUES (:id_permiso, :id_tipo_usuario)";
     
             foreach ($lista_permisos as $permiso) {
-                $db->query($phql, [
+                $conexion->query($phql, [
                     'id_permiso'     => $permiso,
                     'id_tipo_usuario' => $id
                 ]);
