@@ -12,6 +12,78 @@ return function (Micro $app,$di) {
     $db = $di->get('db');
 
     // Ruta principal para obtener todos los usuarios
+    $app->get('/ctusuarios/count', function () use ($app,$db,$request) {
+        try{
+            $id     = $request->getQuery('id');
+            $clave  = $request->getQuery('clave');
+            $nombre = $request->getQuery('nombre');
+            $id_tipo_usuario    = $request->getQuery('id_tipo_usuario');
+            $accion             = $request->getQuery('accion') ?? null;
+            $username           = $request->getQuery('username') ?? null;
+            
+            if ($id != null && !is_numeric($id)){
+                throw new Exception("Parametro de id invalido");
+            }
+        
+            // Definir el query SQL
+            $phql   = "SELECT 
+                            COUNT(1) as num_registros
+                        FROM ctusuarios a 
+                        LEFT JOIN cttipo_usuarios b ON a.id_tipo_usuario = b.id 
+                        WHERE 1 = 1 ";
+            $values = array();
+    
+            if (is_numeric($id)){
+                $phql           .= " AND a.id = :id";
+                $values['id']   = $id;
+            }
+
+            if (!empty($clave) && (empty($accion) || $accion != 'login')) {
+                $phql           .= " AND lower(a.clave) ILIKE :clave";
+                $values['clave'] = "%".FuncionesGlobales::ToLower($clave)."%";
+            }
+
+            if (!empty($accion) && $accion == 'login'){
+                $phql               .= " AND a.clave = :username";
+                $values['username'] = $username;
+            }
+
+            if (!empty($nombre)) {
+                $phql           .= " AND lower(a.nombre) ILIKE :nombre";
+                $values['clave'] = "%".FuncionesGlobales::ToLower($nombre)."%";
+            }
+
+            if (!empty($id_tipo_usuario)){
+                $phql                       .= " AND a.id_tipo_usuario = :id_tipo_usuario";
+                $values['id_tipo_usuario']  = $id_tipo_usuario;
+            }
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $num_registros  = 0;
+            while ($row = $result->fetch()) {
+                $num_registros  = $row['num_registros'];
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($num_registros);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setContent($e->getMessage());
+            $response->setStatusCode(400, 'Created');
+            return $response;
+        }
+        
+    });
+
+    // Ruta principal para obtener todos los usuarios
     $app->get('/ctusuarios/show', function () use ($app,$db,$request) {
         try{
             $id     = $request->getQuery('id');
@@ -62,6 +134,10 @@ return function (Micro $app,$di) {
             }
 
             $phql   .= " ORDER BY a.primer_apellido ASC,a.segundo_apellido ASC,a.nombre";
+
+            if ($request->hasQuery('offset')){
+                $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
+            }
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -70,7 +146,7 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $data = [];
             while ($row = $result->fetch()) {
-                $row['contrasena']      = $request->hasQuery('fromCatalog') ? null : $row['contrasena'];
+                $row['contrasena']      = $request->hasQuery('fromCatalog') || $request->hasQuery('fromCatalogProfessional') ? null : $row['contrasena'];
                 $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
                 $data[] = $row;
             }
