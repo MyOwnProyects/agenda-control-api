@@ -11,6 +11,75 @@ return function (Micro $app,$di) {
     // Obtener el adaptador de base de datos desde el contenedor DI
     $db = $di->get('db');
 
+    $app->get('/ctprofesionales/count', function () use ($app,$db,$request) {
+        try{
+            $id     = $request->getQuery('id');
+            $clave  = $request->getQuery('clave');
+            $nombre = $request->getQuery('nombre');
+            $id_servicio    = $request->getQuery('id_servicio');
+            
+            if ($id != null && !is_numeric($id)){
+                throw new Exception("Parametro de id invalido");
+            }
+        
+            // Definir el query SQL
+            $phql   = "SELECT  
+                            COUNT(1) as num_registros
+                        FROM ctprofesionales a 
+                        LEFT JOIN ctusuarios b ON a.id = b.id_profesional
+                        LEFT JOIN cttipo_usuarios c ON b.id_tipo_usuario = c.id
+                        WHERE 1 = 1";
+            $values = array();
+    
+            if (is_numeric($id)){
+                $phql           .= " AND a.id = :id";
+                $values['id']   = $id;
+            }
+
+            if (!empty($clave) && (empty($accion) || $accion != 'login')) {
+                $phql           .= " AND lower(a.clave) ILIKE :clave";
+                $values['clave'] = "%".FuncionesGlobales::ToLower($clave)."%";
+            }
+
+            if (!empty($nombre)) {
+                $phql           .= " AND lower(a.nombre) ILIKE :nombre";
+                $values['clave'] = "%".FuncionesGlobales::ToLower($nombre)."%";
+            }
+
+            if (!empty($id_servicio)){
+                $phql   .= " AND EXISTS (
+                                SELECT 1 FROM ctprofesionales_locaciones_servicios t1
+                                WHERE t1.id_servicio = :id_servicio AND a.id = t1.id_profesional
+                            )";
+
+                $values['id_servicio']  = $id_servicio;
+            }
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $num_registros  = 0;
+            while ($row = $result->fetch()) {
+                $num_registros  = $row['num_registros'];
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($num_registros);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
     // Ruta principal para obtener todos los registros
     $app->get('/ctprofesionales/show', function () use ($app,$db,$request) {
         try{
@@ -29,7 +98,7 @@ return function (Micro $app,$di) {
                             (a.primer_apellido|| ' ' ||COALESCE(a.segundo_apellido,'')||' '||a.nombre) as nombre_completo,
                             c.clave as clave_tipo_usuario, 
                             c.nombre as nombre_tipo_usuario,
-                            b.estatus
+                            a.estatus
                         FROM ctprofesionales a 
                         LEFT JOIN ctusuarios b ON a.id = b.id_profesional
                         LEFT JOIN cttipo_usuarios c ON b.id_tipo_usuario = c.id
@@ -77,6 +146,21 @@ return function (Micro $app,$di) {
 
                 if ($row['estatus'] === 0){
                     $row['label_estatus_usuario']   = 'INACTIVO';
+                }
+
+                if ($request->hasQuery('get_locaciones')){
+                    $row['locaciones_servicios']    = array();
+                    $phql   = "SELECT * FROM ctprofesionales_locaciones_servicios
+                                WHERE id_profesional = :id_profesional";
+                    
+                    $result_locaciones  = $db->query($phql,array('id_profesional' => $id));
+                    $result_locaciones->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_locaciones){
+                        while($data_locaciones = $result_locaciones->fetch()){
+                            $row['locaciones_servicios'][$data_locaciones['id_locacion']][$data_locaciones['id_servicio']] = $data_locaciones;
+                        }
+                    }
                 }
 
                 $data[]                     = $row;
@@ -187,7 +271,7 @@ return function (Micro $app,$di) {
                                     correo_electronico,
                                     direccion,
                                     titulo,
-                                    cedulta_profesional
+                                    cedula_profesional
                                 ) 
                      VALUES (
                                 :clave,
@@ -198,7 +282,7 @@ return function (Micro $app,$di) {
                                 :correo_electronico,
                                 :direccion,
                                 :titulo,
-                                :cedulta_profesional
+                                :cedula_profesional
                             ) RETURNING id";
     
             $values = [
@@ -210,7 +294,7 @@ return function (Micro $app,$di) {
                 'correo_electronico'    => $correo_electronico,
                 'direccion'             => $direccion,
                 'titulo'                => $titulo_profesional,
-                'cedulta_profesional'   => $cedulta_profesional,
+                'cedula_profesional'    => $cedula_profesional,
             ];
     
             $result = $conexion->query($phql, $values);
@@ -341,12 +425,19 @@ return function (Micro $app,$di) {
     });
 
     $app->delete('/ctprofesionales/delete', function () use ($app, $db) {
+        $conexion = $db;
         try{
-
+            $conexion->begin();
             $id     = $this->request->getPost('id');
 
             $phql   = "DELETE FROM ctprofesionales WHERE id = :id";
             $result = $db->execute($phql, array('id' => $id));
+
+            //  SE BUSCA SI EXISTE UN USUARIO ASIGNADO
+            $phql   = "UPDATE ctusuarios SET id_profesional = null WHERE id_profesional = :id_profesional";
+            $result = $db->execute($phql, array('id_profesional' => $id));
+
+            $conexion->commit();
 
             // RESPUESTA JSON
             $response = new Response();
@@ -355,6 +446,7 @@ return function (Micro $app,$di) {
             return $response;
 
         }catch (\Exception $e) {
+            $conexion->rollback();
             return (new Response())->setJsonContent([
                 'status'  => 'error',
                 'message' => $e->getMessage()
@@ -426,6 +518,156 @@ return function (Micro $app,$di) {
     
             $result = $conexion->execute($phql, $values);
 
+            $conexion->commit();
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $conexion->rollback();
+            
+            return (new Response())->setJsonContent([
+                'status'  => 'error',
+                'message' => $e->getMessage()
+            ])->setStatusCode(400, 'Bad Request');
+        }
+    });
+
+    $app->put('/ctprofesionales/change_status', function () use ($app, $db) {
+        try{
+            //  SE UTILIZARA UN BORRADO LOGICO PARA EVITAR DEJAR
+            //  A LOS USUARIOS SIN UN TIPO
+            $id             = $this->request->getPost('id');
+            $estatus        = '';
+            $flag_exists    = false;
+
+            $phql   = "SELECT * FROM ctprofesionales WHERE id = :id";
+            $result = $db->query($phql, array('id' => $id));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while ($row = $result->fetch()) {
+                $estatus    = $row['estatus'];
+            }
+
+            if ($estatus == ''){
+                throw new Exception("Registro inexistente en el catalogo");
+            }
+
+            $estatus = $estatus == 1 ? 0 : 1;
+
+            //  EN CASO DE DESACTIVAR SOLO SE CAMBIA EL ESTATUS DEL REGISTRO
+            $phql   = "UPDATE ctprofesionales SET estatus = :estatus WHERE id = :id";
+            $result = $db->execute($phql, array(
+                'estatus'   => $estatus,
+                'id'        => $id
+            ));
+
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e) {
+            return (new Response())->setJsonContent([
+                'status'  => 'error',
+                'message' => $e->getMessage()
+            ])->setStatusCode(400, 'Bad Request');
+        }
+    });
+
+    $app->put('/ctprofesionales/update', function () use ($app, $db, $request) {
+        $conexion = $db; 
+        try {
+            $conexion->begin();
+    
+            // OBTENER DATOS JSON
+            $id                 = $request->getPost('id') ?? null;
+            $primer_apellido    = $request->getPost('primer_apellido') ?? null;
+            $segundo_apellido   = $request->getPost('segundo_apellido') ?? null;
+            $nombre             = $request->getPost('nombre') ?? null;
+            $celular            = $request->getPost('celular') ?? null;
+            $correo_electronico = $request->getPost('correo_electronico') ?? null;
+            $direccion          = $request->getPost('direccion') ?? null;
+            $titulo_profesional = $request->getPost('titulo_profesional') ?? null;
+            $cedula_profesional = $request->getPost('cedula_profesional') ?? null;
+            $lista_locaciones   = $request->getPost('lista_locaciones') ?? null;
+    
+            // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
+
+            if (empty($id)) {
+                throw new Exception('Parámetro "Identificador" vacío');
+            }
+
+            if (empty($primer_apellido)) {
+                throw new Exception('Parámetro "Primer apellido" vacío');
+            }
+
+            if (empty($nombre)) {
+                throw new Exception('Parámetro "Nombre" vacío');
+            }
+
+            if (empty($celular)) {
+                throw new Exception('Parámetro "Celular" vacío');
+            }
+
+            if (empty($titulo_profesional)) {
+                throw new Exception('Parámetro "Titulo" vacío');
+            }
+
+            if (!FuncionesGlobales::validarTelefono($celular)){
+                throw new Exception('Parámetro "Celular" invalido');
+            }
+
+            if (!empty($correo_electronico) && !FuncionesGlobales::validarCorreo($correo_electronico)){
+                throw new Exception('Parámetro "Correo electronico" invalido.');
+            }
+    
+            // INSERTAR NUEVO USUARIO
+            $phql = "UPDATE ctprofesionales SET
+                                    primer_apellido = :primer_apellido,
+                                    segundo_apellido = :segundo_apellido,
+                                    nombre = :nombre,
+                                    celular = :celular,
+                                    correo_electronico = :correo_electronico,
+                                    direccion = :direccion,
+                                    titulo = :titulo,
+                                    cedula_profesional = :cedula_profesional
+                                    
+                            WHERE id = :id";
+    
+            $values = [
+                'primer_apellido'       => $primer_apellido,
+                'segundo_apellido'      => $segundo_apellido,
+                'nombre'                => $nombre,
+                'celular'               => $celular,
+                'correo_electronico'    => $correo_electronico,
+                'direccion'       => $direccion,
+                'titulo'       => $titulo_profesional,
+                'cedula_profesional'       => $cedula_profesional,
+                'id'                    => $id
+            ];
+    
+            $result = $conexion->execute($phql, $values);
+
+            //  SE BORRAR LOS PERMISOS ACTUALES
+            $phql   = "DELETE FROM ctprofesionales_locaciones_servicios WHERE id_profesional = :id";
+            $result = $conexion->execute($phql, array('id' => $id));
+            // INSERTAR LAS LOCACIONES
+            $phql = "INSERT INTO ctprofesionales_locaciones_servicios (id_profesional, id_locacion,id_servicio) 
+                     VALUES (:id_profesional,:id_locacion,:id_servicio)";
+    
+            foreach ($lista_locaciones as $locacion) {
+                $conexion->query($phql, [
+                    'id_profesional'    => $id,
+                    'id_locacion'       => $locacion['id_locacion'],
+                    'id_servicio'       => $locacion['id_servicio']
+                ]);
+            }
+    
             $conexion->commit();
     
             // RESPUESTA JSON
