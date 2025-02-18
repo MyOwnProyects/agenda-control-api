@@ -50,7 +50,7 @@ return function (Micro $app,$di) {
 
             if (!empty($nombre)) {
                 $phql           .= " AND lower(a.nombre) ILIKE :nombre";
-                $values['clave'] = "%".FuncionesGlobales::ToLower($nombre)."%";
+                $values['nombre'] = "%".FuncionesGlobales::ToLower($nombre)."%";
             }
 
             if (!empty($id_tipo_usuario)){

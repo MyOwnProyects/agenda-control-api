@@ -11,6 +11,71 @@ return function (Micro $app,$di) {
     $db = $di->get('db');
 
     // Ruta principal para obtener todos los usuarios
+    $app->get('/cttipo_usuarios/count', function () use ($app,$db,$request) {
+        try{
+            $id     = $request->getQuery('id');
+            $clave  = $request->getQuery('clave');
+            $nombre = $request->getQuery('nombre');
+            $activo = $request->getQuery('activo');
+            $get_permisos   = $request->getQuery('get_permisos');
+            
+            if ($id != null && !is_numeric($id)){
+                throw new Exception("Parametro de id invalido");
+            }
+        
+            // Definir el query SQL
+            $phql   = "SELECT 
+                            COUNT(1) as num_registros
+                        FROM cttipo_usuarios a 
+                        WHERE 1 = 1 ";
+            $values = array();
+    
+            if (is_numeric($id)){
+                $phql           .= " AND a.id = :id";
+                $values['id']   = $id;
+            }
+
+            if ($clave != null && $clave != '') {
+                $phql           .= " AND lower(a.clave) ILIKE :clave";
+                $values['clave'] = "%".mb_strtolower($clave, 'UTF-8')."%";
+            }
+
+            if ($nombre != null && $nombre != ''){
+                $phql               .= " AND lower(a.nombre) ILIKE :nombre";
+                $values['nombre']   = "%".mb_strtolower($nombre, 'UTF-8')."%";
+            }
+
+            if (is_numeric($activo)){
+                $phql               .= " AND activo = :activo";
+                $values['activo']   = $activo;
+            }
+
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $num_registros  = 0;
+            while ($row = $result->fetch()) {
+                $num_registros  = $row['num_registros'];
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($num_registros);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'Created');
+            return $response;
+        }
+        
+    });
+
+    // Ruta principal para obtener todos los usuarios
     $app->get('/cttipo_usuarios/show', function () use ($app,$db,$request) {
         try{
             $id     = $request->getQuery('id');
