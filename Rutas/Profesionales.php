@@ -17,6 +17,7 @@ return function (Micro $app,$di) {
             $clave  = $request->getQuery('clave');
             $nombre = $request->getQuery('nombre');
             $id_servicio    = $request->getQuery('id_servicio');
+            $id_locacion    = $request->getQuery('id_locacion') ?? null;
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -54,6 +55,15 @@ return function (Micro $app,$di) {
 
                 $values['id_servicio']  = $id_servicio;
             }
+
+            if (!empty($id_locacion)){
+                $phql   .= " AND EXISTS (
+                                SELECT 1 FROM ctprofesionales_locaciones_servicios t1
+                                WHERE t1.id_locacion = :id_locacion AND a.id = t1.id_profesional
+                            )";
+
+                $values['id_locacion']  = $id_locacion;
+            }
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -87,6 +97,7 @@ return function (Micro $app,$di) {
             $clave  = $request->getQuery('clave');
             $nombre = $request->getQuery('nombre');
             $id_servicio    = $request->getQuery('id_servicio');
+            $id_locacion    = $request->getQuery('id_locacion') ?? null;
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -127,6 +138,15 @@ return function (Micro $app,$di) {
                             )";
 
                 $values['id_servicio']  = $id_servicio;
+            }
+
+            if (!empty($id_locacion)){
+                $phql   .= " AND EXISTS (
+                                SELECT 1 FROM ctprofesionales_locaciones_servicios t1
+                                WHERE t1.id_locacion = :id_locacion AND a.id = t1.id_profesional
+                            )";
+
+                $values['id_locacion']  = $id_locacion;
             }
 
             $phql   .= ' ORDER BY a.clave,a.nombre ';

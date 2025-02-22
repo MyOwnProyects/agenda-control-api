@@ -75,6 +75,7 @@ return function (Micro $app,$di) {
             $id     = $request->getQuery('id');
             $clave  = $request->getQuery('clave');
             $nombre = $request->getQuery('nombre');
+            $id_locacion    = $request->getQuery('id_locacion') ?? null;
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -99,6 +100,14 @@ return function (Micro $app,$di) {
                 $values['nombre'] = "%".FuncionesGlobales::ToLower($nombre)."%";
             }
 
+            if (!empty($id_locacion)){
+                $phql   .= " AND EXISTS (
+                                SELECT 1 FROM ctlocaciones_servicios t1
+                                WHERE t1.id_locacion = :id_locacion AND a.id = t1.id_servicio
+                            )";
+                $values['id_locacion']  = $id_locacion;
+            }
+            
             $phql   .= ' ORDER BY a.clave,a.nombre ';
     
             // Ejecutar el query y obtener el resultado
@@ -148,8 +157,8 @@ return function (Micro $app,$di) {
                 throw new Exception('Parámetro "Nombre" vacío');
             }
 
-            if (empty($costo)) {
-                throw new Exception('Parámetro "Costo" vacío');
+            if (!is_numeric($costo)) {
+                throw new Exception('Parámetro "Costo" No valido');
             }
 
             if (empty($duracion)) {
