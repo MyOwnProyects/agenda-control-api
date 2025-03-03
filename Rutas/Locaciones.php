@@ -80,6 +80,7 @@ return function (Micro $app,$di) {
             $id     = $request->getQuery('id');
             $clave  = $request->getQuery('clave');
             $nombre = $request->getQuery('nombre');
+            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -102,6 +103,15 @@ return function (Micro $app,$di) {
             if (!empty($nombre)) {
                 $phql           .= " AND lower(a.nombre) ILIKE :nombre";
                 $values['nombre'] = "%".FuncionesGlobales::ToLower($nombre)."%";
+            }
+
+            if ($request->hasQuery('onlyallowed')){
+                $phql   .= ' AND EXISTS (
+                                SELECT 1 FROM ctusuarios_locaciones t1 
+                                LEFT JOIN ctusuarios t2 ON t1.id_usuario = t2.id
+                                WHERE a.id = t1.id_locacion AND t2.clave = :usuario_solicitud
+                            )';
+                $values['usuario_solicitud']    = $usuario_solicitud;
             }
 
             $phql   .= ' ORDER BY a.clave,a.nombre ';

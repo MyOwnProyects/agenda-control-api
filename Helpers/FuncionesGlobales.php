@@ -59,4 +59,17 @@ class FuncionesGlobales {
         
         return $valorFormateado;
     }
+
+    public static function raiseExceptionMessage($mensaje){
+        // Usamos una expresión regular para extraer el texto deseado
+        preg_match('/ERROR: (.*?)\.\.\./', $mensaje, $matches);
+
+        // Verificamos si se encontró una coincidencia
+        if (isset($matches[1])) {
+            $textoExtraido = $matches[1];
+            return  $textoExtraido;
+        } else {
+            return $mensaje;
+        }
+    }
 }

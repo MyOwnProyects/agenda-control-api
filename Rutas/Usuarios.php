@@ -77,7 +77,7 @@ return function (Micro $app,$di) {
             // Devolver los datos en formato JSON
             $response = new Response();
             $response->setContent($e->getMessage());
-            $response->setStatusCode(400, 'Created');
+            $response->setStatusCode(400, 'ERROR');
             return $response;
         }
         
@@ -164,7 +164,7 @@ return function (Micro $app,$di) {
             // Devolver los datos en formato JSON
             $response = new Response();
             $response->setContent($e->getMessage());
-            $response->setStatusCode(400, 'Created');
+            $response->setStatusCode(400, 'ERROR');
             return $response;
         }
         
@@ -193,9 +193,33 @@ return function (Micro $app,$di) {
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
     
             // Recorrer los resultados
-            $data = [];
+            $data = array(
+                'permisos'      => array(),
+                'locaciones'    => array()
+            );
             while ($row = $result->fetch()) {
-                $data[$row['id']]   = $row;
+                $data['permisos'][$row['id']]   = $row;
+            }
+
+            // Definir el query SQL
+            $phql   = " SELECT 
+                            b.id,
+                            b.clave as clave_locacion,
+                            b.nombre as nombre_locacion
+                        FROM ctusuarios_locaciones a 
+                        LEFT JOIN ctlocaciones b ON a.id_locacion = b.id
+                        WHERE a.id_usuario = :id_usuario";
+            $values = array(
+                'id_usuario'    => $id_usuario
+            );
+
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $data['locaciones'][$row['id']]   = $row;
             }
 
             if (count($data) == 0){
@@ -211,7 +235,7 @@ return function (Micro $app,$di) {
             // Devolver los datos en formato JSON
             $response = new Response();
             $response->setContent($e->getMessage());
-            $response->setStatusCode(400, 'Created');
+            $response->setStatusCode(400, 'ERROR');
             return $response;
         }
         
@@ -231,6 +255,7 @@ return function (Micro $app,$di) {
             $correo_electronico = $request->getPost('correo_electronico') ?? null;
             $id_tipo_usuario    = $request->getPost('id_tipo_usuario') ?? null;
             $lista_permisos     = $request->getPost('lista_permisos') ?? null;
+            $lista_locaciones   = $request->getPost('lista_locaciones') ?? null;
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
             if (empty($contrasena)) {
@@ -257,6 +282,10 @@ return function (Micro $app,$di) {
                 throw new Exception('Lista de permisos vacía o inválida');
             }
 
+            if (empty($lista_locaciones) || !is_array($lista_locaciones)) {
+                throw new Exception('Lista de locaciones vacía o inválida');
+            }
+
             //  VALIDAR PARAMETROS
             $hash_contrasena    = hash('sha256', $contrasena);
 
@@ -275,7 +304,7 @@ return function (Micro $app,$di) {
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
     
             while ($row = $result->fetch()) {
-                throw new Exception('La clave: ' . $clave . ' ya se encuentra registrada');
+                throw new Exception('La clave: ' . $row['clave'] . ' ya se encuentra registrada');
             }
     
             // INSERTAR NUEVO USUARIO
@@ -336,6 +365,17 @@ return function (Micro $app,$di) {
                     'id_usuario'    => $id_usuario
                 ]);
             }
+
+            //  INSERTAR LAS LOCACIONES DE LOS USUARIOS
+            $phql = "INSERT INTO ctusuarios_locaciones (id_locacion, id_usuario) 
+                     VALUES (:id_locacion, :id_usuario)";
+    
+            foreach ($lista_locaciones as $locacion) {
+                $conexion->query($phql, [
+                    'id_locacion'   => $locacion,
+                    'id_usuario'    => $id_usuario
+                ]);
+            }
     
             $conexion->commit();
     
@@ -348,10 +388,10 @@ return function (Micro $app,$di) {
         } catch (\Exception $e) {
             $conexion->rollback();
             
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'ERROR');
+            return $response;
         }
     });
 
@@ -391,10 +431,10 @@ return function (Micro $app,$di) {
             return $response;
 
         }catch (\Exception $e) {
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'ERROR');
+            return $response;
         }
     });
 
@@ -414,10 +454,10 @@ return function (Micro $app,$di) {
             return $response;
 
         }catch (\Exception $e) {
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'ERROR');
+            return $response;
         }
     });
 
@@ -435,6 +475,7 @@ return function (Micro $app,$di) {
             $correo_electronico = $request->getPost('correo_electronico') ?? null;
             $id_tipo_usuario    = $request->getPost('id_tipo_usuario') ?? null;
             $lista_permisos     = $request->getPost('lista_permisos') ?? null;
+            $lista_locaciones   = $request->getPost('lista_locaciones') ?? null;
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
 
@@ -460,6 +501,10 @@ return function (Micro $app,$di) {
     
             if (empty($lista_permisos) || !is_array($lista_permisos)) {
                 throw new Exception('Lista de permisos vacía o inválida');
+            }
+
+            if (empty($lista_locaciones) || !is_array($lista_locaciones)) {
+                throw new Exception('Lista de locaciones vacía o inválida');
             }
 
             if (!FuncionesGlobales::validarTelefono($celular)){
@@ -505,6 +550,20 @@ return function (Micro $app,$di) {
                     'id_usuario'    => $id
                 ]);
             }
+
+            //  INSERTAR LAS LOCACIONES DE LOS USUARIOS
+            $phql   = "DELETE FROM ctusuarios_locaciones WHERE id_usuario = :id";
+            $result = $conexion->execute($phql, array('id' => $id));
+
+            $phql = "INSERT INTO ctusuarios_locaciones (id_locacion, id_usuario) 
+                     VALUES (:id_locacion, :id_usuario)";
+    
+            foreach ($lista_locaciones as $locacion) {
+                $conexion->query($phql, [
+                    'id_locacion'   => $locacion,
+                    'id_usuario'    => $id
+                ]);
+            }
     
             $conexion->commit();
     
@@ -517,10 +576,10 @@ return function (Micro $app,$di) {
         } catch (\Exception $e) {
             $conexion->rollback();
             
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'ERROR');
+            return $response;
         }
     });
 };

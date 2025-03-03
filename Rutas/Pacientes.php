@@ -20,6 +20,7 @@ return function (Micro $app,$di) {
             $nombre             = $request->getQuery('nombre');
             $id_servicio        = $request->getQuery('id_servicio');
             $id_locacion_registro   = $request->getQuery('id_locacion_registro');
+            $usuario_solicitud       = $request->getQuery('usuario_solicitud');
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -71,6 +72,13 @@ return function (Micro $app,$di) {
                 $phql           .= " AND a.id_locacion_registro = :id_locacion_registro";
                 $values['id_locacion_registro']   = $id_locacion_registro;
             }
+
+            $phql   .= " AND EXISTS (
+                            SELECT 1 FROM ctusuarios_locaciones t1 
+                            LEFT JOIN ctusuarios t2 ON t1.id_usuario = t2.id
+                            WHERE t2.clave = :usuario_solicitud AND a.id_locacion_registro = t1.id_locacion 
+                        )";
+            $values['usuario_solicitud']    = $usuario_solicitud;
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -107,6 +115,7 @@ return function (Micro $app,$di) {
             $nombre             = $request->getQuery('nombre');
             $id_servicio        = $request->getQuery('id_servicio');
             $id_locacion_registro   = $request->getQuery('id_locacion_registro');
+            $usuario_solicitud      = $request->getQuery('usuario_solicitud');
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -170,6 +179,13 @@ return function (Micro $app,$di) {
                 $phql           .= " AND a.id_locacion_registro = :id_locacion_registro";
                 $values['id_locacion_registro']   = $id_locacion_registro;
             }
+
+            $phql   .= " AND EXISTS (
+                SELECT 1 FROM ctusuarios_locaciones t1 
+                LEFT JOIN ctusuarios t2 ON t1.id_usuario = t2.id
+                WHERE t2.clave = :usuario_solicitud AND a.id_locacion_registro = t1.id_locacion 
+            )";
+            $values['usuario_solicitud']    = $usuario_solicitud;
 
             $phql   .= ' ORDER BY a.clave,a.primer_apellido,a.segundo_apellido,a.nombre ';
     
@@ -439,7 +455,7 @@ return function (Micro $app,$di) {
                             ));
                         }
                     }catch(\Exception $err){
-                        throw new \Exception($err->getMessage());
+                        throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
                     }
                     
                 }

@@ -26,12 +26,12 @@ BEGIN
     LOOP 
         --  SE VERIFICA QUE LA HORA INICIO NO SE EMPALME
         IF v_hora_inicio_time >= v_citas.hora_inicio::TIME AND v_hora_inicio_time < v_citas.hora_termino::TIME THEN
-            RAISE EXCEPTION '$$El paciente (%) cuenta con un horario asignado que genera conflictos:  Día (%) de (%) a (%)##',v_citas.nombre_paciente,p_label_dia,p_hora_inicio,p_hora_termino;
+            RAISE EXCEPTION 'El paciente (%) cuenta con un horario asignado que genera conflictos:  Día (%) de (%) a (%)...',v_citas.nombre_paciente,p_label_dia,p_hora_inicio,p_hora_termino;
         END IF; 
 
         --  SE VERIFICA QUE LA HORA DE TERMINO NO SE EMPALME
         IF v_hora_termino_time > v_citas.hora_inicio::TIME AND v_hora_termino_time <= v_citas.hora_termino::TIME THEN
-            RAISE EXCEPTION 'El paciente (%) cuenta con un horario asignado que genera conflictos:  Día (%) de (%) a (%)',v_citas.nombre_paciente,p_label_dia,p_hora_inicio,p_hora_termino;
+            RAISE EXCEPTION 'El paciente (%) cuenta con un horario asignado que genera conflictos:  Día (%) de (%) a (%)...',v_citas.nombre_paciente,p_label_dia,p_hora_inicio,p_hora_termino;
         END IF;
 
     END LOOP;
