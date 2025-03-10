@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION fn_programar_citas(p_id_paciente INT, p_id_locacion INT, p_fecha_inicio DATE, p_dias INTEGER, p_id_usuario_agenda INT)
+CREATE OR REPLACE FUNCTION fn_programar_citas(p_id_paciente INT, p_id_locacion INT, p_fecha_inicio DATE, p_fecha_termino DATE, p_clave_usuario_agenda VARCHAR)
 RETURNS TEXT AS $$
 DECLARE
     fecha_actual        DATE;
@@ -10,7 +10,19 @@ DECLARE
     arr_id_paciente     INT[];
     count_pacientes     INT;
     count_citas         INT;
+    v_dias              INT;
+    v_id_usuario_agenda INT;
 BEGIN
+
+    --  SE CALCULA LA DIFERENCIA DE DIAS
+    SELECT p_fecha_termino::DATE - p_fecha_inicio::DATE AS diferencia_dias INTO v_dias;
+
+    IF v_dias < 0 THEN 
+        RAISE EXCEPTION 'Fecha de inicio es menor a la fecha final...';
+    END IF;
+
+    --  SE BUSCA EL ID DEL USUARIO
+    SELECT id INTO v_id_usuario_agenda FROM ctusuarios WHERE clave = p_clave_usuario_agenda;
 
     --  VERIFICA QUE NO SE GENEREN CITAS PASADAS
     IF p_fecha_inicio::DATE < NOW()::DATE THEN
@@ -29,8 +41,8 @@ BEGIN
     END IF;
 
     --  SE BORRAN TODOS LOS REGISTROS YA EXISTENTES EN LA AGENDA QUE SEAN DE CITAS PROGRAMADAS
-    --  DE LOS PACIENTES QUE ESTEN EN EL RANGO DE FECHAS DE FECHA_INICO Y FECHA_INICIO + P_DIAS
-    DELETE FROM tbagenda_citas WHERE id_paciente = ANY (arr_id_paciente) AND fecha_cita::DATE between p_fecha_inicio and p_fecha_inicio::date + (p_dias || ' days')::interval;
+    --  DE LOS PACIENTES QUE ESTEN EN EL RANGO DE FECHAS DE FECHA_INICO Y FECHA_INICIO + V_DIAS
+    DELETE FROM tbagenda_citas WHERE id_paciente = ANY (arr_id_paciente) AND fecha_cita::DATE between p_fecha_inicio and p_fecha_inicio::date + (v_dias || ' days')::interval;
 
     count_pacientes := COUNT(arr_id_paciente);
     count_citas     := 0;
@@ -59,7 +71,7 @@ BEGIN
 
             -- Recorremos cada fecha generada por generate_series
             FOR fecha_actual IN
-                SELECT generate_series(p_fecha_inicio, p_fecha_inicio + (p_dias || ' days')::INTERVAL, '1 day')::DATE
+                SELECT generate_series(p_fecha_inicio, p_fecha_inicio + (v_dias || ' days')::INTERVAL, '1 day')::DATE
             LOOP
                 -- Obtenemos el día de la semana en inglés
                 dia_semana := to_char(fecha_actual, 'Day');
@@ -83,7 +95,7 @@ BEGIN
                 v_id_agenda_cita    := null;
 
                 INSERT INTO tbagenda_citas (id_paciente,fecha_cita,dia,hora_inicio,hora_termino,id_usuario_agenda,id_cita_programada)
-                VALUES (arr_info_cita.id_paciente,fecha_actual,i,arr_info_cita.hora_inicio,arr_info_cita.hora_termino,p_id_usuario_agenda,arr_info_cita.id_cita_programada) 
+                VALUES (arr_info_cita.id_paciente,fecha_actual,i,arr_info_cita.hora_inicio,arr_info_cita.hora_termino,v_id_usuario_agenda,arr_info_cita.id_cita_programada) 
                 RETURNING id INTO v_id_agenda_cita;
 
                 --  SE CREA REGISTRO DEL SERVICIO

@@ -328,7 +328,10 @@ return function (Micro $app,$di) {
             $id_paciente    = $request->getPost('id_paciente') ?? null;
             $id_locacion    = $request->getPost('id_locacion') ?? null;
             $obj_info       = $request->getPost('obj_info') ?? null;
-            $accion         = 'pendiete de realizar';
+            $generar_citas  = $request->getPost('generar_citas') ?? null;
+            $fecha_inicio   = $request->getPost('fecha_inicio') ?? null;
+            $fecha_termino  = $request->getPost('fecha_termino') ?? null;
+            $clave_usuario  = $request->getPost('usuario_solicitud') ?? null;
 
             $arr_dias   = array(
                 1   => 'Lunes',
@@ -458,6 +461,24 @@ return function (Micro $app,$di) {
                         throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
                     }
                     
+                }
+            }
+
+            if ($generar_citas != null && $fecha_inicio!= null && $fecha_termino!= null){
+                try{
+                    //  SE AGENDAN LAS CITAS DEL PACIENTE
+                    $phql   = "SELECT * FROM fn_programar_citas(:id_paciente,:id_locacion,:fecha_inicio,:fecha_termino,:clave_usuario);";
+                    $values = array(
+                        'id_paciente'   => $id_paciente,
+                        'id_locacion'   => $id_locacion,
+                        'fecha_inicio'  => $fecha_inicio,
+                        'fecha_termino' => $fecha_termino,
+                        'clave_usuario' => $clave_usuario
+                    );
+
+                    $result_citas   = $conexion->execute($phql,$values);
+                }catch(\Exception $err){
+                    throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
                 }
             }
 

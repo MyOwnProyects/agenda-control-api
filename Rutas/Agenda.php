@@ -12,7 +12,7 @@ return function (Micro $app,$di) {
     $db = $di->get('db');
 
     // Ruta principal para obtener todos los usuarios
-    $app->get('/ctlocaciones/count', function () use ($app,$db,$request) {
+    $app->get('/tbagenda_citas/count', function () use ($app,$db,$request) {
         try{
             $id     = $request->getQuery('id');
             $clave  = $request->getQuery('clave');
@@ -25,7 +25,7 @@ return function (Micro $app,$di) {
             // Definir el query SQL
             $phql   = "SELECT 
                             COUNT(1) as num_registros
-                        FROM ctlocaciones a 
+                        FROM tbagenda_citas a 
                         WHERE 1 = 1 ";
             $values = array();
     
@@ -75,7 +75,7 @@ return function (Micro $app,$di) {
     });
 
     // Ruta principal para obtener todos los registros
-    $app->get('/ctlocaciones/show', function () use ($app,$db,$request) {
+    $app->get('/tbagenda_citas/show', function () use ($app,$db,$request) {
         try{
             $id     = $request->getQuery('id');
             $clave  = $request->getQuery('clave');
@@ -87,7 +87,7 @@ return function (Micro $app,$di) {
             }
         
             // Definir el query SQL
-            $phql   = "SELECT * FROM ctlocaciones a WHERE 1 = 1";
+            $phql   = "SELECT * FROM tbagenda_citas a WHERE 1 = 1";
             $values = array();
     
             if (is_numeric($id)){
@@ -158,7 +158,7 @@ return function (Micro $app,$di) {
         
     });
 
-    $app->post('/ctlocaciones/create', function () use ($app, $db, $request) {
+    $app->post('/tbagenda_citas/create', function () use ($app, $db, $request) {
         $conexion = $db; 
         try {
             $conexion->begin();
@@ -252,14 +252,14 @@ return function (Micro $app,$di) {
         } catch (\Exception $e) {
             $conexion->rollback();
             
-            $response = new Response();
-            $response->setJsonContent($e->getMessage());
-            $response->setStatusCode(400, 'not found');
-            return $response;
+            return (new Response())->setJsonContent([
+                'status'  => 'error',
+                'message' => $e->getMessage()
+            ])->setStatusCode(400, 'Bad Request');
         }
     });
 
-    $app->delete('/ctlocaciones/delete', function () use ($app, $db) {
+    $app->delete('/tbagenda_citas/delete', function () use ($app, $db) {
         try{
 
             $id     = $this->request->getPost('id');
@@ -274,14 +274,14 @@ return function (Micro $app,$di) {
             return $response;
 
         }catch (\Exception $e) {
-            $response = new Response();
-            $response->setJsonContent($e->getMessage());
-            $response->setStatusCode(400, 'not found');
-            return $response;
+            return (new Response())->setJsonContent([
+                'status'  => 'error',
+                'message' => $e->getMessage()
+            ])->setStatusCode(400, 'Bad Request');
         }
     });
 
-    $app->put('/ctlocaciones/update', function () use ($app, $db, $request) {
+    $app->put('/tbagenda_citas/update', function () use ($app, $db, $request) {
         $conexion = $db; 
         try {
             $conexion->begin();
@@ -348,7 +348,7 @@ return function (Micro $app,$di) {
                      VALUES (:id_locacion, :id_servicio, :costo, :duracion)";
     
             foreach ($lista_servicios as $servicio) {
-                $conexion->execute($phql, [
+                $conexion->query($phql, [
                     'id_locacion'   => $id,
                     'id_servicio'   => $servicio['id_servicio'],
                     'costo'         => $servicio['costo'],
@@ -367,136 +367,10 @@ return function (Micro $app,$di) {
         } catch (\Exception $e) {
             $conexion->rollback();
             
-            $response = new Response();
-            $response->setJsonContent($e->getMessage());
-            $response->setStatusCode(400, 'not found');
-            return $response;
-        }
-    });
-
-    $app->post('/ctlocaciones/save_opening_hours', function () use ($app, $db, $request) {
-        $conexion = $db; 
-        try {
-            $conexion->begin();
-    
-            $id_locacion    = $request->getPost('id_locacion') ?? null;
-            $obj_info       = $request->getPost('obj_info') ?? null;
-
-            //  SE BORRA EL HORARIO DE ATENCION ACTUAL
-            $phql   = "DELETE FROM ctlocaciones_horarios_atencion WHERE id_locacion = :id_locacion";
-            $conexion->execute($phql, [
-                'id_locacion'   => $id_locacion
-            ]);
-
-            //  SE RECORRE EL OBJETO Y SE CREAN LOS REGISTROS
-            foreach($obj_info as $horario_atencion){
-                $phql   = "SELECT * FROM ctlocaciones_horarios_atencion 
-                            WHERE id_locacion = :id_locacion AND hora_inicio = :hora_inicio AND hora_termino = :hora_termino";
-                $values = array(
-                    'id_locacion'   => $id_locacion,
-                    'hora_inicio'   => $horario_atencion['hora_inicio'],
-                    'hora_termino'  => $horario_atencion['hora_termino'],
-                );
-                $result = $db->query($phql,$values);
-                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-    
-                $id_locacion_horario_atencion   = null;
-                while ($data = $result->fetch()) {
-                    $id_locacion_horario_atencion   = $data['id'];
-                }
-
-                //  SE CREA EL REGISTRO EN CASO DE QUE ESTE NO EXISTA
-                if ($id_locacion_horario_atencion == null){
-                    $phql   = "INSERT INTO ctlocaciones_horarios_atencion (id_locacion,hora_inicio,hora_termino)
-                                VALUES (:id_locacion,:hora_inicio,:hora_termino) RETURNING *";
-
-                    $result_create  = $conexion->query($phql,$values);
-                    $result_create->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-
-                    while ($data_create = $result_create->fetch()) {
-                        $id_locacion_horario_atencion   = $data_create['id'];
-                    }
-                }
-
-                //  SE RECORRE EL REGISTRO DE DIAS
-                $phql   = "INSERT INTO ctlocaciones_horarios_atencion_dias (id_locacion_horario_atencion,dia)
-                                VALUES (:id_locacion_horario_atencion,:dia)";
-                foreach($horario_atencion['dias'] as $dia){
-                    $result_create_dia  = $conexion->query($phql,array(
-                        'id_locacion_horario_atencion'  => $id_locacion_horario_atencion,
-                        'dia'                           => $dia
-                    ));
-                }
-            }
-            
-    
-            $conexion->commit();
-    
-            // RESPUESTA JSON
-            $response = new Response();
-            $response->setJsonContent(array('MSG' => 'OK'));
-            $response->setStatusCode(200, 'OK');
-            return $response;
-            
-        } catch (\Exception $e) {
-            $conexion->rollback();
-            
-            $response = new Response();
-            $response->setJsonContent($e->getMessage());
-            $response->setStatusCode(400, 'not found');
-            return $response;
-        }
-    });
-
-    $app->get('/ctlocaciones/get_opening_hours', function () use ($app, $db, $request) {
-        try {
-    
-            $id_locacion    = $request->getQuery('id_locacion');
-            $arr_return     = array();
-
-            $phql   = "SELECT * FROM ctlocaciones_horarios_atencion 
-                        WHERE id_locacion = :id_locacion
-                        ORDER BY hora_inicio ASC,hora_termino ASC";
-            $result = $db->query($phql,array(
-                'id_locacion'   => $id_locacion
-            ));
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-
-            $id_locacion_horario_atencion   = null;
-            while ($data = $result->fetch()) {
-                $tmp_array          = $data;
-                $tmp_array['dias']  = array();
-
-                //  SE BUSCAN LOS DIAS ASIGNADOS
-                $phql   = "SELECT dia FROM ctlocaciones_horarios_atencion_dias 
-                            WHERE id_locacion_horario_atencion = :id_locacion_horario_atencion";
-
-                $result_dias    = $db->query($phql,array(
-                    'id_locacion_horario_atencion'  => $data['id']
-                ));
-                $result_dias->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-
-                if ($result_dias){
-                    while($data_dias = $result_dias->fetch()){
-                        $tmp_array['dias'][]    = $data_dias;
-                    }
-                }
-
-                $arr_return[]   = $tmp_array;
-            }
-    
-            // RESPUESTA JSON
-            $response = new Response();
-            $response->setJsonContent($arr_return);
-            $response->setStatusCode(200, 'OK');
-            return $response;
-            
-        } catch (\Exception $e) {
-            
-            $response = new Response();
-            $response->setJsonContent($e->getMessage());
-            $response->setStatusCode(400, 'not found');
-            return $response;
+            return (new Response())->setJsonContent([
+                'status'  => 'error',
+                'message' => $e->getMessage()
+            ])->setStatusCode(400, 'Bad Request');
         }
     });
 };
