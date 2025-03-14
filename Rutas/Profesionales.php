@@ -18,6 +18,7 @@ return function (Micro $app,$di) {
             $nombre = $request->getQuery('nombre');
             $id_servicio    = $request->getQuery('id_servicio');
             $id_locacion    = $request->getQuery('id_locacion') ?? null;
+            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -64,6 +65,14 @@ return function (Micro $app,$di) {
 
                 $values['id_locacion']  = $id_locacion;
             }
+
+            $phql   .= " AND EXISTS (
+                SELECT 1 FROM ctprofesionales_locaciones_servicios t1
+                LEFT JOIN ctusuarios_locaciones t2 ON t1.id_locacion = t2.id_locacion 
+                LEFT JOIN ctusuarios t3 ON t2.id_usuario = t3.id
+                WHERE t3.clave = :usuario_solicitud AND  t1.id_profesional = a.id
+            )";
+            $values['usuario_solicitud']    = $usuario_solicitud;
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -98,6 +107,7 @@ return function (Micro $app,$di) {
             $nombre = $request->getQuery('nombre');
             $id_servicio    = $request->getQuery('id_servicio');
             $id_locacion    = $request->getQuery('id_locacion') ?? null;
+            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -149,6 +159,14 @@ return function (Micro $app,$di) {
                 $values['id_locacion']  = $id_locacion;
             }
 
+            $phql   .= " AND EXISTS (
+                            SELECT 1 FROM ctprofesionales_locaciones_servicios t1
+                            LEFT JOIN ctusuarios_locaciones t2 ON t1.id_locacion = t2.id_locacion 
+                            LEFT JOIN ctusuarios t3 ON t2.id_usuario = t3.id
+                            WHERE t3.clave = :usuario_solicitud AND  t1.id_profesional = a.id
+                        )";
+            $values['usuario_solicitud']    = $usuario_solicitud;
+
             $phql   .= ' ORDER BY a.clave,a.nombre ';
     
             // Ejecutar el query y obtener el resultado
@@ -168,17 +186,56 @@ return function (Micro $app,$di) {
                     $row['label_estatus_usuario']   = 'INACTIVO';
                 }
 
-                if ($request->hasQuery('get_locaciones')){
+                $aqui   = 1;
+
+                if ($request->hasQuery('get_locaciones') || $request->hasQuery('location_allower')){
                     $row['locaciones_servicios']    = array();
-                    $phql   = "SELECT * FROM ctprofesionales_locaciones_servicios
-                                WHERE id_profesional = :id_profesional";
+                    $phql   = "SELECT * FROM ctprofesionales_locaciones_servicios a
+                                WHERE a.id_profesional = :id_profesional";
+
+                    $values = array('id_profesional' => $id);
+
+                    if ($request->hasQuery('location_allower')){
+                        $phql   .= ' AND EXISTS (
+                                        SELECT 1 FROM ctusuarios_locaciones t1 
+                                        LEFT JOIN ctusuarios t2 ON t1.id_usuario = t2.id
+                                        WHERE a.id_locacion = t1.id_locacion AND t2.clave = :usuario_solicitud
+                                    )';
+                        $values['usuario_solicitud']    = $usuario_solicitud;
+                    }
                     
-                    $result_locaciones  = $db->query($phql,array('id_profesional' => $id));
+                    $result_locaciones  = $db->query($phql,$values);
                     $result_locaciones->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
                     if ($result_locaciones){
                         while($data_locaciones = $result_locaciones->fetch()){
                             $row['locaciones_servicios'][$data_locaciones['id_locacion']][$data_locaciones['id_servicio']] = $data_locaciones;
+                        }
+                    }
+                }
+
+                if ($request->hasQuery('only_locations')){
+                    $row['locaciones']  = array();
+                    $phql   = "SELECT DISTINCT b.* FROM ctprofesionales_locaciones_servicios a
+                                LEFT JOIN ctlocaciones b ON a.id_locacion = b.id
+                                WHERE id_profesional = :id_profesional";
+                    $values = array('id_profesional' => $id);
+
+                    if ($request->hasQuery('location_allower')){
+                        $phql   .= ' AND EXISTS (
+                                        SELECT 1 FROM ctusuarios_locaciones t1 
+                                        LEFT JOIN ctusuarios t2 ON t1.id_usuario = t2.id
+                                        WHERE a.id_locacion = t1.id_locacion AND t2.clave = :usuario_solicitud
+                                    )';
+                        $values['usuario_solicitud']    = $usuario_solicitud;
+                    }
+                    
+                    $result_locaciones  = $db->query($phql,$values);
+                    $result_locaciones->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_locaciones){
+                        while($data_locaciones = $result_locaciones->fetch()){
+                            $row['locaciones'][]    = $data_locaciones;
                         }
                     }
                 }

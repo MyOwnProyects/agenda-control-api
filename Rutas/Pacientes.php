@@ -507,9 +507,28 @@ return function (Micro $app,$di) {
 
             $id_paciente    = $request->getQuery('id_paciente') ?? null;
             $id_locacion    = $request->getQuery('id_locacion') ?? null;
+            $from_catalog   = $request->getQuery('from_catalog') ?? null;
 
             if (empty($id_paciente) && empty($id_locacion)){
                 throw new Exception('Parámetros vacíos');
+            }
+
+            //  SE VERIFICA QUE LA LOCACION TENGA REGISTRADO EL HORARIO DE ATENCION
+            if ($from_catalog != null){
+                $has_openning_hours = false;
+                $phql   = "SELECT 1 FROM ctlocaciones_horarios_atencion WHERE id_locacion = :id_locacion LIMIT 1";
+                $result = $db->query($phql,array('id_locacion' => $id_locacion));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+                if ($result){
+                    while($data = $result->fetch()){
+                        $has_openning_hours = true;
+                    }
+                }
+
+                if (!$has_openning_hours){
+                    throw new Exception('No existe un horario de atenci&oacute;n asignado a la locaci&oacute;n');
+                }
             }
         
             // Definir el query SQL
