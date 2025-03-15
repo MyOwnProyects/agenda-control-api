@@ -65,7 +65,11 @@ return function (Micro $app,$di) {
                     $phql   = "INSERT INTO tbhorarios_atencion (id_locacion,id_profesional,hora_inicio,hora_termino)
                                 VALUES (:id_locacion,:id_profesional,:hora_inicio,:hora_termino) RETURNING *";
 
-                    $values['id_profesional']   = null;
+                    if (!empty($id_profesional)){
+                        $values['id_profesional']   = $id_profesional;
+                    } else {
+                        $values['id_profesional']   = null;
+                    }
                     $result_create  = $conexion->query($phql,$values);
                     $result_create->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
