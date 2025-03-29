@@ -115,7 +115,13 @@ return function (Micro $app,$di) {
             $id_profesional = $request->getQuery('id_profesional') ?? null;
             $arr_return     = array();
 
-            $phql   = "SELECT * FROM tbhorarios_atencion 
+            $phql   = "SELECT 
+                            id,
+                            id_locacion,
+                            id_profesional ,
+                            TO_CHAR(hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(hora_termino, 'HH24:MI') AS hora_termino
+                        FROM tbhorarios_atencion 
                         WHERE id_locacion = :id_locacion ";
 
             $values = array(

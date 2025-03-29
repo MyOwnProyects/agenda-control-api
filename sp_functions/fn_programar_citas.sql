@@ -1,18 +1,27 @@
 CREATE OR REPLACE FUNCTION fn_programar_citas(p_id_paciente INT, p_id_locacion INT, p_fecha_inicio DATE, p_fecha_termino DATE, p_clave_usuario_agenda VARCHAR)
 RETURNS TEXT AS $$
 DECLARE
-    fecha_actual        DATE;
-    dia_semana          TEXT;
-    dia_semana_num      INT;
-    arr_info_cita       RECORD;
-    v_id_agenda_cita    INT;
-    i                   INT; -- CONTADORE DE DIAS
-    arr_id_paciente     INT[];
-    count_pacientes     INT;
-    count_citas         INT;
-    v_dias              INT;
-    v_id_usuario_agenda INT;
+    validar_fecha_inicio    BOOLEAN;
+    fecha_actual            DATE;
+    fecha_validacion        DATE;
+    dia_semana              TEXT;
+    dia_semana_num          INT;
+    arr_info_cita           RECORD;
+    v_id_agenda_cita        INT;
+    i                       INT; -- CONTADOR DE DIAS
+    arr_id_paciente         INT[];
+    count_pacientes         INT;
+    count_citas             INT;
+    v_dias                  INT;
+    v_id_usuario_agenda     INT;
 BEGIN
+
+    --  VALIDACION DE FECHA DE INICIO
+    SELECT current_date < p_fecha_inicio::DATE INTO validar_fecha_inicio;
+
+    IF validar_fecha_inicio = FALSE THEN 
+        RAISE EXCEPTION 'No se permite programar citas menos al día de hoy: (%)...',current_date;
+    END IF;
 
     --  SE CALCULA LA DIFERENCIA DE DIAS
     SELECT p_fecha_termino::DATE - p_fecha_inicio::DATE AS diferencia_dias INTO v_dias;
@@ -32,11 +41,23 @@ BEGIN
     -- SI ID_PACIENTE ES NULL ES PARA GENERAR A TODOS LOS PACIENTES 
     --  QUE NO ESTEN DADOS DE BAJA Y QUE TENGAN CITA EN LA LOCACION INDICADA
     IF p_id_paciente IS NULL THEN 
+
+        --  SE CREA REGISTRO DE APERTURA DE AGENDA
+        INSERT INTO tbapertura_agenda (id_usuario,id_locacion,fecha_apertura,fecha_limite) 
+        VALUES (v_id_usuario_agenda,p_id_locacion,p_fecha_inicio,p_fecha_termino);
+
         SELECT array_agg(b.id) INTO arr_id_paciente
         FROM tbcitas_programadas a 
         LEFT JOIN ctpacientes b  ON a.id_paciente = b.id 
         WHERE b.estatus = 1 AND a.id_locacion = p_id_locacion;
     ELSE 
+        --  SE VERIFICA QUE LAS FECHAS ESTEN EN EL RANGO DE LA APERTURA DE AGENDA
+        SELECT fecha_limite INTO fecha_validacion FROM tbapertura_agenda WHERE id_locacion = p_id_locacion ORDER BY fecha_termino DESC LIMIT 1;
+
+        IF fecha_validacion <> null AND p_fecha_termino > fecha_validacion THEN 
+            RAISE EXCEPTION 'El rango de fechas ingresado sobrepasa a la fecha de apertura de agenda: (%)...',fecha_validacion;
+        END IF;
+
         arr_id_paciente := array_append(arr_id_paciente, p_id_paciente);
     END IF;
 

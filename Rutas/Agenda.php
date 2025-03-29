@@ -158,219 +158,85 @@ return function (Micro $app,$di) {
         
     });
 
-    $app->post('/tbagenda_citas/create', function () use ($app, $db, $request) {
-        $conexion = $db; 
-        try {
-            $conexion->begin();
-    
-            // OBTENER DATOS JSON
-            $clave      = $request->getPost('clave') ?? null;
-            $nombre     = $request->getPost('nombre') ?? null;
-            $direccion  = $request->getPost('direccion') ?? null;
-            $telefono   = $request->getPost('telefono') ?? null;
-            $celular    = $request->getPost('celular') ?? null;
-            $lista_servicios    = $request->getPost('lista_servicios') ?? null;
-    
-            // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
-            if (empty($clave)) {
-                throw new Exception('Parámetro "Clave" vacío');
-            }
-    
-            if (empty($nombre)) {
-                throw new Exception('Parámetro "Nombre" vacío');
-            }
-            
-            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
-            $phql = "SELECT * FROM ctlocaciones WHERE clave = :clave";
-    
-            $result = $db->query($phql, ['clave' => $clave]);
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-    
-            while ($row = $result->fetch()) {
-                throw new Exception('La clave: ' . $clave . ' ya se encuentra registrada');
-            }
-    
-            // INSERTAR NUEVO servicio
-            $phql = "INSERT INTO ctlocaciones (
-                                    clave,
-                                    nombre,
-                                    direccion,
-                                    telefono,
-                                    celular
-                                ) 
-                     VALUES (
-                                :clave, 
-                                :nombre, 
-                                :direccion,
-                                :telefono,
-                                :celular
-                            ) RETURNING id";
-    
-            $values = [
-                'clave'     => $clave,
-                'nombre'    => $nombre,
-                'direccion' => $direccion,
-                'telefono'  => $telefono,
-                'celular'   => $celular
-            ];
-    
-            $result = $conexion->query($phql, $values);
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-    
-            $id = null;
-            if ($result) {
-                while ($data = $result->fetch()) {
-                    $id= $data['id'];
-                }
-            }
-    
-            if (!$id) {
-                throw new Exception('Error al crear la locación');
-            }
-
-            // INSERTAR LOS PERMISOS
-            $phql = "INSERT INTO ctlocaciones_servicios (id_locacion, id_servicio,costo,duracion) 
-                     VALUES (:id_locacion, :id_servicio, :costo, :duracion)";
-    
-            foreach ($lista_servicios as $servicio) {
-                $conexion->query($phql, [
-                    'id_locacion'   => $id,
-                    'id_servicio'   => $servicio['id_servicio'],
-                    'costo'         => $servicio['costo'],
-                    'duracion'      => $servicio['duracion'],
-                ]);
-            }
-    
-            $conexion->commit();
-    
-            // RESPUESTA JSON
-            $response = new Response();
-            $response->setJsonContent(array('MSG' => 'OK'));
-            $response->setStatusCode(200, 'OK');
-            return $response;
-            
-        } catch (\Exception $e) {
-            $conexion->rollback();
-            
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
-        }
-    });
-
-    $app->delete('/tbagenda_citas/delete', function () use ($app, $db) {
+    $app->get('/tbapertura_agenda/show', function () use ($app,$db,$request) {
         try{
 
-            $id     = $this->request->getPost('id');
+            $id_locacion    = $request->getQuery('id_locacion') ?? null;
+            $zona_horario   = date_default_timezone_get();
 
-            $phql   = "DELETE FROM ctlocaciones WHERE id = :id";
-            $result = $db->execute($phql, array('id' => $id));
+            //  SE BUSCA SI EXISTE UN REGISTRO DE APERTURA DE AGENDA
+            $phql   = "SELECT t2.fecha_limite as last_fecha_limite,t2.has_record,current_date as fecha_actual from (
+                        SELECT fecha_limite,has_record from (
+                        SELECT fecha_limite::DATE, 1 as has_record FROM tbapertura_agenda 
+                        WHERE id_locacion = :id_locacion ORDER BY fecha_limite DESC LIMIT 1
+                        )t1
+                        UNION ALL
+                        SELECT (current_date)::DATE as fecha_limite, 0 as has_record
+                        ) t2 order by has_record desc limit 1";
 
-            // RESPUESTA JSON
+            $values = array(
+                'id_locacion'   => $id_locacion
+            );
+
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $arr_return = array();
+            if ($result){
+                while($data = $result->fetch()){
+                    $arr_return = $data;
+                }
+            }
+
             $response = new Response();
-            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setJsonContent($arr_return);
             $response->setStatusCode(200, 'OK');
             return $response;
 
-        }catch (\Exception $e) {
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
         }
     });
 
-    $app->put('/tbagenda_citas/update', function () use ($app, $db, $request) {
-        $conexion = $db; 
-        try {
-            $conexion->begin();
-    
-            // OBTENER DATOS JSON
-            $id         = $request->getPost('id') ?? null;
-            $clave      = $request->getPost('clave') ?? null;
-            $nombre     = $request->getPost('nombre') ?? null;
-            $direccion  = $request->getPost('direccion') ?? null;
-            $telefono   = $request->getPost('telefono') ?? null;
-            $celular    = $request->getPost('celular') ?? null;
-            $lista_servicios    = $request->getPost('lista_servicios') ?? null;
-    
-            // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
+    $app->post('/tbapertura_agenda/save', function () use ($app,$db,$request) {
+        try{
 
-            if (empty($id)) {
-                throw new Exception('Parámetro "ID" vacío');
-            }
+            $id_locacion    = $request->getPost('id_locacion') ?? null;
+            $fecha_inicio   = $request->getPost('fecha_inicio') ?? null;
+            $fecha_termino  = $request->getPost('fecha_termino') ?? null;
+            $clave_usuario  = $request->getPost('usuario_solicitud') ?? null;
 
-            if (empty($clave)) {
-                throw new Exception('Parámetro "Clave" vacío');
-            }
-    
-            if (empty($nombre)) {
-                throw new Exception('Parámetro "Nombre" vacío');
-            }
-            
-            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
-            $phql = "SELECT * FROM ctlocaciones WHERE clave = :clave AND id <> :id";
-    
-            $result = $db->query($phql, ['clave' => $clave,'id' => $id]);
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-    
-            while ($row = $result->fetch()) {
-                throw new Exception('La clave: ' . $clave . ' ya se encuentra registrada');
-            }
-    
-            // INSERTAR NUEVO servicio
-            $phql = "UPDATE ctlocaciones SET
-                                    clave = :clave,
-                                    nombre = :nombre,
-                                    direccion = :direccion,
-                                    telefono = :telefono,
-                                    celular = :celular
-                            WHERE id = :id ";
-    
-            $values = [
-                'id'        => $id,
-                'clave'     => $clave,
-                'nombre'    => $nombre,
-                'direccion' => $direccion,
-                'telefono'  => $telefono,
-                'celular'   => $celular
-            ];
-    
-            $result = $conexion->execute($phql, $values);
+            try{
+                //  SE AGENDAN LAS CITAS DEL PACIENTE
+                $phql   = "SELECT * FROM fn_programar_citas(null,:id_locacion,:fecha_inicio,:fecha_termino,:clave_usuario);";
+                $values = array(
+                    'id_locacion'   => $id_locacion,
+                    'fecha_inicio'  => $fecha_inicio,
+                    'fecha_termino' => $fecha_termino,
+                    'clave_usuario' => $clave_usuario
+                );
 
-            //  SE BORRAN LOS SERVICIOS ACTUALES
-            $phql = "DELETE FROM ctlocaciones_servicios WHERE id_locacion = :id_locacion";
-            $result = $conexion->execute($phql, ['id_locacion' => $id]);
-
-            // INSERTAR LOS PERMISOS
-            $phql = "INSERT INTO ctlocaciones_servicios (id_locacion, id_servicio,costo,duracion) 
-                     VALUES (:id_locacion, :id_servicio, :costo, :duracion)";
-    
-            foreach ($lista_servicios as $servicio) {
-                $conexion->query($phql, [
-                    'id_locacion'   => $id,
-                    'id_servicio'   => $servicio['id_servicio'],
-                    'costo'         => $servicio['costo'],
-                    'duracion'      => $servicio['duracion'],
-                ]);
+                $result_citas   = $db->execute($phql,$values);
+            }catch(\Exception $err){
+                throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
             }
-    
-            $conexion->commit();
     
             // RESPUESTA JSON
             $response = new Response();
             $response->setJsonContent(array('MSG' => 'OK'));
             $response->setStatusCode(200, 'OK');
             return $response;
-            
-        } catch (\Exception $e) {
-            $conexion->rollback();
-            
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
         }
     });
 };
