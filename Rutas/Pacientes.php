@@ -371,10 +371,15 @@ return function (Micro $app,$di) {
             if ($result) {
                 while ($data = $result->fetch()) {
                     $id_cita_programada = $data['id'];
-
-                    //  SE BORRAN LOS REGISTROS DE SERVICIOS Y HORARIOS
-                    $phql   = "DELETE FROM tbcitas_programadas_servicios WHERE id_cita_programada = :id_cita_programada";
-                    $result_delete  = $conexion->execute($phql,array('id_cita_programada'   => $id_cita_programada));
+                    // foreach($obj_info as $info_cita){
+                    //     //  SE BORRAN LOS REGISTROS DE SERVICIOS Y HORARIOS
+                    //     $phql   = "DELETE FROM tbcitas_programadas_servicios 
+                    //     WHERE id_cita_programada = :id_cita_programada AND id_servicio = :id_servicio";
+                    //     $result_delete  = $conexion->execute($phql,array(
+                    //         'id_cita_programada'    => $id_cita_programada,
+                    //         'id_servicio'           => $info_cita['id_servicio']
+                    //     ));
+                    // }
                 }
             }
 
@@ -405,10 +410,9 @@ return function (Micro $app,$di) {
                 $id_servicio    = $info_cita['id_servicio'];
                 $id_cita_programada_servicio    = null;
 
-                //  SE CREA EL REGISTRO DE TBCITAS_PROGRAMADAS_SERVICIOS
-                $phql   = "INSERT INTO tbcitas_programadas_servicios (id_cita_programada,id_servicio,id_profesional)
-                            VALUES (:id_cita_programada,:id_servicio,:id_profesional) RETURNING *";
-
+                //  SE BUSCA SI EXISTE EL REGISTRO DE CLASE
+                $phql   = "SELECT * FROM tbcitas_programadas_servicios 
+                            WHERE id_cita_programada = :id_cita_programada AND id_servicio = :id_servicio AND id_profesional = :id_profesional LIMIT 1";
                 $result_servicios   = $conexion->query($phql, array(
                     'id_cita_programada'    => $id_cita_programada,
                     'id_servicio'           => $id_servicio,
@@ -421,6 +425,26 @@ return function (Micro $app,$di) {
                         $id_cita_programada_servicio    = $data_servicios['id'];
                     }
                 }
+
+                if ($id_cita_programada_servicio == null){
+                    //  SE CREA EL REGISTRO DE TBCITAS_PROGRAMADAS_SERVICIOS
+                    $phql   = "INSERT INTO tbcitas_programadas_servicios (id_cita_programada,id_servicio,id_profesional)
+                                VALUES (:id_cita_programada,:id_servicio,:id_profesional) RETURNING *";
+
+                    $result_servicios   = $conexion->query($phql, array(
+                        'id_cita_programada'    => $id_cita_programada,
+                        'id_servicio'           => $id_servicio,
+                        'id_profesional'        => $id_profesional
+                    ));
+                    $result_servicios->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_servicios) {
+                        while ($data_servicios = $result_servicios->fetch()) {
+                            $id_cita_programada_servicio    = $data_servicios['id'];
+                        }
+                    }
+                }
+                
 
                 //  SE RECORRE LA ESTRUCTURA DE LAS HORAS DE LAS CITAS
                 foreach($info_cita['horarios'] as $horario){
@@ -507,6 +531,7 @@ return function (Micro $app,$di) {
 
             $id_paciente    = $request->getQuery('id_paciente') ?? null;
             $id_locacion    = $request->getQuery('id_locacion') ?? null;
+            $id_profesional = $request->getQuery('id_profesional') ?? null;
             $from_catalog   = $request->getQuery('from_catalog') ?? null;
 
             if (empty($id_paciente) && empty($id_locacion)){
@@ -535,20 +560,32 @@ return function (Micro $app,$di) {
             $phql   = " SELECT
                             a.*,
                             b.id as id_cita_programada_servicio,
+                            c.id as id_cita_programada_servicio_horario,
                             b.id_servicio,
+                            e.nombre as servicio,
                             b.id_profesional,
+                            (d.primer_apellido||' '||COALESCE(d.segundo_apellido,'')||' '||d.nombre) as profesional,
                             c.dia,
-                            c.hora_inicio,
-                            c.hora_termino  
+                            TO_CHAR(c.hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(c.hora_termino, 'HH24:MI') AS hora_termino,
+                            TRUNC(f.duracion / 60, 0) AS duracion
                         FROM tbcitas_programadas a 
                         LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
                         LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
-                        WHERE 1 = 1 ";
+                        LEFT JOIN ctprofesionales d ON b.id_profesional = d.id
+                        LEFT JOIN ctservicios e ON b.id_servicio = e.id
+                        LEFT JOIN ctlocaciones_servicios f ON a.id_locacion = f.id_locacion AND b.id_servicio = f.id_servicio
+                        WHERE 1 = 1 AND b.id IS NOT NULL AND c.id IS NOT NULL";
             $values = array();
     
             if (is_numeric($id_paciente)){
                 $phql                   .= " AND a.id_paciente = :id_paciente ";
                 $values['id_paciente']  = $id_paciente;
+            }
+
+            if (is_numeric($id_profesional)){
+                $phql                       .= " AND b.id_profesional = :id_profesional ";
+                $values['id_profesional']   = $id_profesional;
             }
 
             if (is_numeric($id_locacion)){
@@ -564,11 +601,15 @@ return function (Micro $app,$di) {
             $row    = [];
             while ($data = $result->fetch()) {
                 $row[$data['id_cita_programada_servicio']]['id_servicio']       = $data['id_servicio'];
+                $row[$data['id_cita_programada_servicio']]['duracion']          = $data['duracion'];
                 $row[$data['id_cita_programada_servicio']]['id_profesional']    = $data['id_profesional'];
-                $row[$data['id_cita_programada_servicio']]['horarios'][]        = array(
+                $row[$data['id_cita_programada_servicio']]['servicio']          = $data['servicio'];
+                $row[$data['id_cita_programada_servicio']]['profesional']       = $data['profesional'];
+                $row[$data['id_cita_programada_servicio']]['horarios'][]                            = array(
                     'dia'           => $data['dia'],
                     'hora_inicio'   => $data['hora_inicio'],
                     'hora_termino'  => $data['hora_termino'],
+                    'id_cita_programada_servicio_horario'   => $data['id_cita_programada_servicio_horario'],
                 );
             }
     
@@ -585,5 +626,70 @@ return function (Micro $app,$di) {
             return $response;
         }
         
+    });
+
+    $app->post('/ctpacientes/delete_program_date', function () use ($app, $db, $request) {
+        $conexion = $db; 
+        try {
+            $conexion->begin();
+    
+            // OBTENER DATOS JSON
+            $id = $request->getPost('id_cita_programada_servicio_horario') ?? null;
+
+            $clave_usuario  = $request->getPost('usuario_solicitud') ?? null;
+
+            //  SE BUSCA EL REGISTRO DEL SERVICIO, ESTE EN CASO DE QUE QUE VACIO EL REGISTRO            
+            $id_cita_programada_servicio    = null;
+            $phql   = "SELECT * FROM tbcitas_programadas_servicios_horarios WHERE id = :id";
+
+            $result = $db->query($phql,array(
+                'id'    => $id
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+            if($result){
+                while($data = $result->fetch()){
+                    $id_cita_programada_servicio    = $data['id_cita_programada_servicio'];
+                }
+            }
+
+            //  SE BORRA EL REGISTRO
+            $phql   = "DELETE FROM tbcitas_programadas_servicios_horarios WHERE id = :id";
+            $conexion->execute($phql,array('id' => $id));
+
+            //  SE BUSCA SI EL SERVICIO TIENE DIAS , DE LO CONTRARIO SE BORRA
+            $phql   = "SELECT COUNT(*) as num_records FROM tbcitas_programadas_servicios_horarios WHERE id_cita_programada_servicio = :id_cita_programada_servicio";
+            $result = $db->query($phql,array(
+                'id_cita_programada_servicio'   => $id_cita_programada_servicio
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $flag_count = 0;
+            if($result){
+                while($data = $result->fetch()){
+                    $flag_count = $data['num_records'];
+                }
+            }
+
+            if( $flag_count == 0){
+                $phql   = "DELETE FROM tbcitas_programadas_servicios WHERE id = :id_cita_programada_servicio";
+                $conexion->execute($phql,array('id_cita_programada_servicio' => $id_cita_programada_servicio));
+            }
+
+            $conexion->commit();
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $conexion->rollback();
+            
+            return (new Response())->setJsonContent([
+                'status'  => 'error',
+                'message' => $e->getMessage()
+            ])->setStatusCode(400, 'Bad Request');
+        }
     });
 };
