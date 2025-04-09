@@ -373,12 +373,12 @@ return function (Micro $app,$di) {
                     $id_cita_programada = $data['id'];
                     // foreach($obj_info as $info_cita){
                     //     //  SE BORRAN LOS REGISTROS DE SERVICIOS Y HORARIOS
-                    //     $phql   = "DELETE FROM tbcitas_programadas_servicios 
-                    //     WHERE id_cita_programada = :id_cita_programada AND id_servicio = :id_servicio";
-                    //     $result_delete  = $conexion->execute($phql,array(
-                    //         'id_cita_programada'    => $id_cita_programada,
-                    //         'id_servicio'           => $info_cita['id_servicio']
-                    //     ));
+                        // $phql   = "DELETE FROM tbcitas_programadas_servicios 
+                        // WHERE id_cita_programada = :id_cita_programada AND id_servicio = :id_servicio";
+                        // $result_delete  = $conexion->execute($phql,array(
+                        //     'id_cita_programada'    => $id_cita_programada,
+                        //     'id_servicio'           => $info_cita['id_servicio']
+                        // ));
                     // }
                 }
             }
@@ -686,6 +686,75 @@ return function (Micro $app,$di) {
         } catch (\Exception $e) {
             $conexion->rollback();
             
+            return (new Response())->setJsonContent([
+                'status'  => 'error',
+                'message' => $e->getMessage()
+            ])->setStatusCode(400, 'Bad Request');
+        }
+    });
+
+    $app->put('/ctpacientes/change_status', function () use ($app, $db) {
+        $conexion = $db; 
+        try{
+            $conexion->begin();
+            //  SE UTILIZARA UN BORRADO LOGICO PARA EVITAR DEJAR
+            //  A LOS USUARIOS SIN UN TIPO
+            $id             = $this->request->getPost('id');
+            $estatus        = '';
+            $flag_exists    = false;
+
+            $phql   = "SELECT * FROM ctpacientes WHERE id = :id";
+            $result = $db->query($phql, array('id' => $id));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while ($row = $result->fetch()) {
+                $estatus    = $row['estatus'];
+            }
+
+            if ($estatus == ''){
+                throw new Exception("Registro inexistente en el catalogo");
+            }
+
+            $estatus = $estatus == 1 ? 0 : 1;
+
+            //  EN CASO DE DESACTIVAR SOLO SE CAMBIA EL ESTATUS DEL REGISTRO
+            $phql   = "UPDATE ctpacientes SET estatus = :estatus WHERE id = :id";
+            $result = $conexion->execute($phql, array(
+                'estatus'   => $estatus,
+                'id'        => $id
+            ));
+
+            if ($estatus != 1){
+                //  SI SE INACTIVA AL PACIENTE, SE BORRAN TODAS SUS CITAS PROGRAMADAS
+                //  TODO VERIFICAR SI SE CANCELAN LAS CITAS ACTIVAS DE LA AGENDA
+                $phql   = "DELETE FROM tbcitas_programadas_servicios WHERE id IN (
+                            SELECT a.id from tbcitas_programadas_servicios a
+                            LEFT JOIN tbcitas_programadas b ON a.id_cita_programada = b.id 
+                            WHERE b.id_paciente = :id_paciente
+                        );";
+                $result_delete  = $conexion->execute($phql,array(
+                    'id_paciente'   => $id
+                ));
+
+                //  SE CANCELAN LAS CITAS AGENDADAS
+                $phql = "UPDATE tbagenda_citas SET activa = 0, motivo_cancelacion = 1 
+                        WHERE id_paciente = :id_paciente AND activa = 1 AND fecha_cita >= current_date";
+
+                $result_delete  = $conexion->execute($phql,array(
+                    'id_paciente'   => $id
+                ));
+            }
+
+            $conexion->commit();
+
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e) {
+            $conexion->rollback();
             return (new Response())->setJsonContent([
                 'status'  => 'error',
                 'message' => $e->getMessage()

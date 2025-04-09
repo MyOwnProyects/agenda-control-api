@@ -17,10 +17,10 @@ DECLARE
 BEGIN
 
     --  VALIDACION DE FECHA DE INICIO
-    SELECT current_date < p_fecha_inicio::DATE INTO validar_fecha_inicio;
-
+    SELECT current_date <= p_fecha_inicio::DATE INTO validar_fecha_inicio;
+    RAISE NOTICE 'p_fecha_inicio = %, current_date = %', p_fecha_inicio, current_date;
     IF validar_fecha_inicio = FALSE THEN 
-        RAISE EXCEPTION 'No se permite programar citas menos al día de hoy: (%)...',current_date;
+        RAISE EXCEPTION 'No se permite programar citas (%) menos al d&iacute;a de hoy: (%)...',p_fecha_inicio::DATE,current_date;
     END IF;
 
     --  SE CALCULA LA DIFERENCIA DE DIAS
@@ -60,6 +60,8 @@ BEGIN
 
         arr_id_paciente := array_append(arr_id_paciente, p_id_paciente);
     END IF;
+
+    RAISE NOTICE 'PACIENTES (%)', arr_id_paciente;
 
     --  SE BORRAN TODOS LOS REGISTROS YA EXISTENTES EN LA AGENDA QUE SEAN DE CITAS PROGRAMADAS
     --  DE LOS PACIENTES QUE ESTEN EN EL RANGO DE FECHAS DE FECHA_INICO Y FECHA_INICIO + V_DIAS
