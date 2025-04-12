@@ -332,6 +332,7 @@ return function (Micro $app,$di) {
             $fecha_inicio   = $request->getPost('fecha_inicio') ?? null;
             $fecha_termino  = $request->getPost('fecha_termino') ?? null;
             $clave_usuario  = $request->getPost('usuario_solicitud') ?? null;
+            $id_cita_programada_servicio_horario    = $request->getPost('id_cita_programada_servicio_horario') ?? null;
 
             $arr_dias   = array(
                 1   => 'Lunes',
@@ -350,6 +351,48 @@ return function (Micro $app,$di) {
 
             if (empty($id_locacion)){
                 throw new Exception('Parámetro "Locación" vacío');
+            }
+
+            $aqui   = 1;
+            //  AL TRAER ESTE ID SIGNIFICA QUE ES UNA EDICION
+            if (!empty($id_cita_programada_servicio_horario) && is_numeric($id_cita_programada_servicio_horario)){
+                $id_cita_programada_servicio    = null;
+
+                $phql   = "SELECT * FROM tbcitas_programadas_servicios_horarios WHERE id = :id";
+                $result = $db->query($phql, array('id' => $id_cita_programada_servicio_horario));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                if ($result) {
+                    while ($data = $result->fetch()) {
+                        $id_cita_programada_servicio = $data['id_cita_programada_servicio'];
+                    }
+                }
+
+                $phql   = "DELETE FROM tbcitas_programadas_servicios_horarios WHERE id = :id";
+                $result = $conexion->query($phql, array('id' => $id_cita_programada_servicio_horario));
+
+                //  SE VERIFICA QUE SOLO EXISTA UN REGISTRO DE SERVICIO->HORARIO
+                $phql   = "SELECT COUNT(*) as num_registros 
+                            FROM tbcitas_programadas_servicios a 
+                            LEFT JOIN tbcitas_programadas_servicios_horarios b ON a.id = b.id_cita_programada_servicio
+                            WHERE a.id = :id AND b.id IS NOT NULL";
+                $result = $db->query($phql, array('id' => $id_cita_programada_servicio));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                $flag_delete    = true;
+                if ($result) {
+                    while ($data = $result->fetch()) {
+                        if ($data['num_registros'] > 0){
+                            $flag_delete    = false;
+                        }
+                    }
+                }
+
+                if ($flag_delete){
+                    $phql   = "DELETE FROM tbcitas_programadas_servicios WHERE id = :id";
+                    $result = $conexion->query($phql, array('id' => $id_cita_programada_servicio));
+                }
+
             }
 
             // if (empty($obj_info)) {
