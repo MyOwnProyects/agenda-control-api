@@ -77,17 +77,30 @@ return function (Micro $app,$di) {
     // Ruta principal para obtener todos los registros
     $app->get('/tbagenda_citas/show', function () use ($app,$db,$request) {
         try{
-            $id     = $request->getQuery('id');
-            $clave  = $request->getQuery('clave');
-            $nombre = $request->getQuery('nombre');
+            $id             = $request->getQuery('id') ?? null;
+            $id_locacion    = $request->getQuery('id') ?? null;
+            $rango_fechas   = $request->getQuery('rango_fechas') ?? null;
+            $activa         = $request->getQuery('activa') ?? null;
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
-            
-            if ($id != null && !is_numeric($id)){
-                throw new Exception("Parametro de id invalido");
-            }
-        
+
             // Definir el query SQL
-            $phql   = "SELECT * FROM tbagenda_citas a WHERE 1 = 1";
+            $phql   = " SELECT  
+                            a.id as id_agenda_cita,
+                            a.id_cita_programada,
+                            a.asistencia,
+                            a.dia as day,
+                            a.fecha_cita,
+                            TO_CHAR(a.hora_inicio, 'HH24:MI') AS start,
+                            TO_CHAR(a.hora_termino, 'HH24:MI') AS end,
+                            CEIL(EXTRACT(EPOCH FROM (a.hora_termino - a.hora_inicio)) / 60) AS duracion,
+                            (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
+                            (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) as nombre_profesional,
+                            a.id_profesional,
+                            b.celular
+                        FROM tbagenda_citas a 
+                        LEFT JOIN ctpacientes b ON a.id_paciente = b.id
+                        LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
+                        WHERE 1 = 1 ";
             $values = array();
     
             if (is_numeric($id)){
@@ -95,26 +108,23 @@ return function (Micro $app,$di) {
                 $values['id']   = $id;
             }
 
-            if (!empty($clave) && (empty($accion) || $accion != 'login')) {
-                $phql           .= " AND lower(a.clave) ILIKE :clave";
-                $values['clave'] = "%".FuncionesGlobales::ToLower($clave)."%";
+            if (!empty($id_locacion)) {
+                $phql           .= " AND a.id_locacion = :id_locacion ";
+                $values['id_locacion']  = $id_locacion;
             }
 
-            if (!empty($nombre)) {
-                $phql           .= " AND lower(a.nombre) ILIKE :nombre";
-                $values['nombre'] = "%".FuncionesGlobales::ToLower($nombre)."%";
+            if (!empty($rango_fechas)){
+                $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
+                $values['fecha_inicio']     = $rango_fechas['fecha_inicio'];
+                $values['fecha_termino']    = $rango_fechas['fecha_termino'];
             }
 
-            if ($request->hasQuery('onlyallowed')){
-                $phql   .= ' AND EXISTS (
-                                SELECT 1 FROM ctusuarios_locaciones t1 
-                                LEFT JOIN ctusuarios t2 ON t1.id_usuario = t2.id
-                                WHERE a.id = t1.id_locacion AND t2.clave = :usuario_solicitud
-                            )';
-                $values['usuario_solicitud']    = $usuario_solicitud;
+            if (is_numeric($activa)){
+                $phql               .= " AND a.activa = :activa";
+                $values['activa']   = $activa;
             }
 
-            $phql   .= ' ORDER BY a.clave,a.nombre ';
+            $phql   .= ' ORDER BY a.fecha_cita,a.hora_inicio,a.hora_termino ';
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -123,23 +133,6 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $data = [];
             while ($row = $result->fetch()) {
-                $row['servicios']   = array();
-                if ($request->hasQuery('get_servicios')){
-                    $phql   = "SELECT a.id_servicio,b.clave,b.nombre,a.costo,a.duracion FROM ctlocaciones_servicios a 
-                                LEFT JOIN ctservicios b ON a.id_servicio = b.id
-                                WHERE a.id_locacion = :id_locacion
-                                ORDER BY b.clave,b.nombre";
-                    $result_servicios   = $db->query($phql,array('id_locacion' => $row['id']));
-                    $result_servicios->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-
-                    if ($result_servicios){
-                        while($data_servicios = $result_servicios->fetch()){
-                            $data_servicios['duracion_minutos'] = $data_servicios['duracion'] / 60;
-                            $row['servicios'][] = $data_servicios;
-                        }
-                    }
-                }
-
                 $data[] = $row;
             }
     
@@ -233,6 +226,141 @@ return function (Micro $app,$di) {
 
         }catch (\Exception $e){
             // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->delete('/tbagenda_citas/cancelar_cita', function () use ($app, $db,$request) {
+        try{
+
+            $id_agenda_cita         = $request->getPost('id_agenda_cita');
+            $id_motivo_cancelacion  = $request->getPost('id_motivo_cancelacion');
+            $observaciones_cancelacion  = $request->getPost('observaciones_cancelacion');
+            $usuario_solicitud          = $request->getPost('usuario_solicitud');
+
+            if (empty($id_agenda_cita)){
+                throw new Exception('Parametro identificar de cita vacio');
+            }
+
+            //  SE BUSCA EL ID DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
+            }
+
+            if ($id_usuario_solicitud == null){
+                throw new Exception('Usuario inexistente en el catalogo');
+            }
+
+            //  SE VERIFICA QUE LA CITA SE ENCUENTRE ACTIVA
+            $phql   = "SELECT *  FROM tbagenda_citas WHERE id = :id_agenda_cita AND activa = 1";
+            
+            $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $flag_activa    = false;
+            if ($result){
+                while($data = $result->fetch()){
+                    $flag_activa    = true;
+                }
+            }
+
+            if (!$flag_activa){
+                throw new Exception('La cita ya se encuentra cancelada');
+            }
+
+            $phql   = " UPDATE tbagenda_citas SET 
+                            activa = 0,
+                            id_motivo_cancelacion = :id_motivo_cancelacion,
+                            observaciones_cancelacion = :observaciones_cancelacion,
+                            id_usuario_cancelacion = :id_usuario_cancelacion,
+                            fecha_cancelacion = NOW()  
+                        WHERE id = :id";
+            $values = array(
+                'id'                        => $id_agenda_cita,
+                'id_motivo_cancelacion'     => $id_motivo_cancelacion,
+                'observaciones_cancelacion' => $observaciones_cancelacion,
+                'id_usuario_cancelacion'    => $id_usuario_solicitud
+            );
+            $result = $db->execute($phql, $values);
+
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->put('/tbagenda_citas/modificar_asistencia', function () use ($app, $db, $request) {
+        try {
+    
+            // OBTENER DATOS JSON
+            $id_agenda_cita = $request->getPost('id_agenda_cita');
+            $estatus_asistencia_actual   = $request->getPost('estatus_asistencia_actual');
+            $nuevo_estatus_asistencia    = $request->getPost('nuevo_estatus_asistencia');
+            
+    
+            // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
+            if (empty($id_agenda_cita)) {
+                throw new Exception('Parámetro "ID" vacío');
+            }
+
+            if (!is_numeric($estatus_asistencia_actual)) {
+                throw new Exception('Parámetro "Estatus actual" vacío');
+            }
+    
+            if (!is_numeric($nuevo_estatus_asistencia)) {
+                throw new Exception('Parámetro "Nuevo estatus" vacío');
+            }
+            
+            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
+            $phql = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita AND asistencia <> :estatus_asistencia_actual";
+    
+            $result = $db->query($phql, array(
+                'id_agenda_cita'    => $id_agenda_cita,
+                'estatus_asistencia_actual' => $estatus_asistencia_actual
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            while ($row = $result->fetch()) {
+                throw new Exception('El estatus de la asistencia ha sido modificado previamentem, te sugerimos refrescar la vista.');
+            }
+    
+            // INSERTAR NUEVO servicio
+            $phql = "UPDATE tbagenda_citas SET
+                                    asistencia = :nuevo_estatus_asistencia
+                            WHERE id = :id_agenda_cita ";
+    
+            $values = [
+                'id_agenda_cita'    => $id_agenda_cita,
+                'nuevo_estatus_asistencia'  => $nuevo_estatus_asistencia,
+            ];
+    
+            $result = $db->execute($phql, $values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) { 
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');

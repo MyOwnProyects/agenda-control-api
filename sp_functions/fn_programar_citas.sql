@@ -117,13 +117,13 @@ BEGIN
 
                 v_id_agenda_cita    := null;
 
-                INSERT INTO tbagenda_citas (id_paciente,fecha_cita,dia,hora_inicio,hora_termino,id_usuario_agenda,id_cita_programada)
-                VALUES (arr_info_cita.id_paciente,fecha_actual,i,arr_info_cita.hora_inicio,arr_info_cita.hora_termino,v_id_usuario_agenda,arr_info_cita.id_cita_programada) 
+                INSERT INTO tbagenda_citas (id_paciente,id_locacion,fecha_cita,dia,hora_inicio,hora_termino,id_usuario_agenda,id_cita_programada,id_profesional)
+                VALUES (arr_info_cita.id_paciente,p_id_locacion,fecha_actual,i,arr_info_cita.hora_inicio,arr_info_cita.hora_termino,v_id_usuario_agenda,arr_info_cita.id_cita_programada,arr_info_cita.id_profesional) 
                 RETURNING id INTO v_id_agenda_cita;
 
                 --  SE CREA REGISTRO DEL SERVICIO
-                INSERT INTO tbagenda_citas_servicios (id_agenda_cita,id_servicio,id_profesional,costo)
-                VALUES (v_id_agenda_cita,arr_info_cita.id_servicio,arr_info_cita.id_profesional,arr_info_cita.costo);
+                INSERT INTO tbagenda_citas_servicios (id_agenda_cita,id_servicio,costo)
+                VALUES (v_id_agenda_cita,arr_info_cita.id_servicio,arr_info_cita.costo);
 
                 count_citas := count_citas + 1;
 
