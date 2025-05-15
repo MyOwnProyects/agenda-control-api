@@ -187,7 +187,7 @@ return function (Micro $app,$di) {
             )";
             $values['usuario_solicitud']    = $usuario_solicitud;
 
-            $phql   .= ' ORDER BY a.clave,a.primer_apellido,a.segundo_apellido,a.nombre ';
+            $phql   .= ' ORDER BY a.primer_apellido,a.segundo_apellido,a.nombre ';
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -250,13 +250,22 @@ return function (Micro $app,$di) {
             }
     
             // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
-            $phql = "SELECT * FROM ctpacientes WHERE clave = :clave";
+            $phql = "SELECT * FROM ctpacientes a
+                    WHERE lower(a.primer_apellido) ILIKE :primer_apellido AND
+                          lower(a.segundo_apellido) ILIKE :segundo_apellido AND
+                          lower(a.nombre) ILIKE :nombre ";
+
+            $values = array(
+                'primer_apellido'   => "%".FuncionesGlobales::ToLower($primer_apellido)."%",
+                'segundo_apellido'  => "%".FuncionesGlobales::ToLower($segundo_apellido)."%",
+                'nombre'            => "%".FuncionesGlobales::ToLower($nombre)."%",
+            );
     
-            $result = $db->query($phql, ['clave' => $celular]);
+            $result = $db->query($phql, $values);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
     
             while ($row = $result->fetch()) {
-                throw new Exception('La clave: ' . $clave . ' ya se encuentra registrada');
+                throw new Exception('El paciente ya se encuentra registrado');
             }
     
             // INSERTAR NUEVO USUARIO
@@ -269,7 +278,7 @@ return function (Micro $app,$di) {
                                     id_locacion_registro
                                 ) 
                      VALUES (
-                                :clave, 
+                                (select fn_crear_clave_paciente()), 
                                 :primer_apellido,
                                 :segundo_apellido,
                                 :nombre,
@@ -278,7 +287,6 @@ return function (Micro $app,$di) {
                             ) RETURNING id";
     
             $values = [
-                'clave'                 => $celular,
                 'primer_apellido'       => $primer_apellido,
                 'segundo_apellido'      => $segundo_apellido,
                 'nombre'                => $nombre,
@@ -312,10 +320,10 @@ return function (Micro $app,$di) {
         } catch (\Exception $e) {
             $conexion->rollback();
             
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
         }
     });
 
@@ -560,10 +568,10 @@ return function (Micro $app,$di) {
         } catch (\Exception $e) {
             $conexion->rollback();
             
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
         }
     });
 
@@ -611,13 +619,15 @@ return function (Micro $app,$di) {
                             c.dia,
                             TO_CHAR(c.hora_inicio, 'HH24:MI') AS hora_inicio,
                             TO_CHAR(c.hora_termino, 'HH24:MI') AS hora_termino,
-                            TRUNC(f.duracion / 60, 0) AS duracion
+                            TRUNC(f.duracion / 60, 0) AS duracion,
+                            g.nombre as nombre_locacion
                         FROM tbcitas_programadas a 
                         LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
                         LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
                         LEFT JOIN ctprofesionales d ON b.id_profesional = d.id
                         LEFT JOIN ctservicios e ON b.id_servicio = e.id
                         LEFT JOIN ctlocaciones_servicios f ON a.id_locacion = f.id_locacion AND b.id_servicio = f.id_servicio
+                        LEFT JOIN ctlocaciones g ON a.id_locacion = g.id
                         WHERE 1 = 1 AND b.id IS NOT NULL AND c.id IS NOT NULL";
             $values = array();
     
@@ -648,6 +658,7 @@ return function (Micro $app,$di) {
                 $row[$data['id_cita_programada_servicio']]['id_profesional']    = $data['id_profesional'];
                 $row[$data['id_cita_programada_servicio']]['servicio']          = $data['servicio'];
                 $row[$data['id_cita_programada_servicio']]['profesional']       = $data['profesional'];
+                $row[$data['id_cita_programada_servicio']]['nombre_locacion']   = $data['nombre_locacion'];
                 $row[$data['id_cita_programada_servicio']]['horarios'][]                            = array(
                     'dia'           => $data['dia'],
                     'hora_inicio'   => $data['hora_inicio'],
@@ -729,22 +740,23 @@ return function (Micro $app,$di) {
         } catch (\Exception $e) {
             $conexion->rollback();
             
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
         }
     });
 
-    $app->put('/ctpacientes/change_status', function () use ($app, $db) {
+    $app->put('/ctpacientes/change_status', function () use ($app, $db,$request) {
         $conexion = $db; 
         try{
             $conexion->begin();
             //  SE UTILIZARA UN BORRADO LOGICO PARA EVITAR DEJAR
             //  A LOS USUARIOS SIN UN TIPO
-            $id             = $this->request->getPost('id');
-            $estatus        = '';
-            $flag_exists    = false;
+            $id                 = $request->getPost('id');
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $estatus            = '';
+            $flag_exists        = false;
 
             $phql   = "SELECT * FROM ctpacientes WHERE id = :id";
             $result = $db->query($phql, array('id' => $id));
@@ -779,12 +791,44 @@ return function (Micro $app,$di) {
                     'id_paciente'   => $id
                 ));
 
+                //  SE BUSCA EL ID DE BAJA POR CATALOGO
+                $phql   = "SELECT * FROM ctmotivos_cancelacion_cita WHERE clave = 'BAJ'";
+                $result = $db->query($phql);
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                $id_motivo_cancelacion  = null;
+                while ($row = $result->fetch()) {
+                    $id_motivo_cancelacion  = $row['id'];
+                }
+
+                $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+                $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                $id_usuario_solicitud   = null;
+                if ($result){
+                    while($data = $result->fetch()){
+                        $id_usuario_solicitud   = $data['id'];
+                    }
+                }
+
+                if ($id_usuario_solicitud == null){
+                    throw new Exception('Usuario inexistente en el catalogo');
+                }
+
                 //  SE CANCELAN LAS CITAS AGENDADAS
-                $phql = "UPDATE tbagenda_citas SET activa = 0, motivo_cancelacion = 1 
-                        WHERE id_paciente = :id_paciente AND activa = 1 AND fecha_cita >= current_date";
+                $phql = "   UPDATE tbagenda_citas 
+                            SET 
+                                activa = 0, 
+                                id_motivo_cancelacion = :id_motivo_cancelacion, 
+                                observaciones_cancelacion   = 'CANCELACION POR BAJA DE PACIENTE',
+                                id_usuario_cancelacion      = :id_usuario_cancelacion
+                            WHERE id_paciente = :id_paciente AND activa = 1 AND fecha_cita >= current_date";
 
                 $result_delete  = $conexion->execute($phql,array(
-                    'id_paciente'   => $id
+                    'id_paciente'               => $id,
+                    'id_motivo_cancelacion'     => $id_motivo_cancelacion,
+                    'id_usuario_cancelacion'    => $id_usuario_solicitud
                 ));
             }
 
@@ -798,10 +842,55 @@ return function (Micro $app,$di) {
 
         }catch (\Exception $e) {
             $conexion->rollback();
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
         }
+    });
+
+    $app->get('/ctpacientes/fill_combo', function () use ($app,$db,$request) {
+        try{
+            //  CADENAA BUSCAR
+            $cadena = $request->getQuery('cadena');
+
+            //  QUERY DE BUSQUEDA
+            $phql   = "SELECT * FROM (
+                        SELECT  
+                            a.*,
+                            (a.primer_apellido|| ' ' ||COALESCE(a.segundo_apellido,'')||' '||a.nombre) as nombre_completo
+                        FROM ctpacientes a
+                        WHERE estatus = 1
+                        ) t1
+                        WHERE (lower(t1.celular) ILIKE :cadena ) OR (lower(t1.nombre_completo) ILIKE :cadena)
+                        ORDER BY t1.nombre_completo ASC;";
+
+            $result = $db->query($phql,array('cadena' => "%".FuncionesGlobales::ToLower($cadena)."%",));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $arr_return     = array();
+
+            $arr_return[]   = array(
+                'id'                => '-1',
+                'nombre_completo'   => 'Nuevo registro',
+                'celular'           => '',
+                'nombre'            => '',
+                'primer_apellido'   => '',
+                'segundo_apellido'  => '',
+            );
+            
+            if ($result){
+                while($data = $result->fetch()){
+                    $arr_return[]   = $data;
+                }
+            }
+
+            return json_encode($arr_return);
+        }catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+}
     });
 };

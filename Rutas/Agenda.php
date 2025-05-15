@@ -78,9 +78,10 @@ return function (Micro $app,$di) {
     $app->get('/tbagenda_citas/show', function () use ($app,$db,$request) {
         try{
             $id             = $request->getQuery('id') ?? null;
-            $id_locacion    = $request->getQuery('id') ?? null;
+            $id_locacion    = $request->getQuery('id_locacion') ?? null;
             $rango_fechas   = $request->getQuery('rango_fechas') ?? null;
             $activa         = $request->getQuery('activa') ?? null;
+            $id_profesional = $request->getQuery('id_profesional') ?? null;
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
 
             // Definir el query SQL
@@ -122,6 +123,11 @@ return function (Micro $app,$di) {
             if (is_numeric($activa)){
                 $phql               .= " AND a.activa = :activa";
                 $values['activa']   = $activa;
+            }
+
+            if (is_numeric($id_profesional)){
+                $phql           .= " AND a.id_profesional = :id_profesional";
+                $values['id_profesional']   = $id_profesional;
             }
 
             $phql   .= ' ORDER BY a.fecha_cita,a.hora_inicio,a.hora_termino ';
@@ -199,14 +205,16 @@ return function (Micro $app,$di) {
         try{
 
             $id_locacion    = $request->getPost('id_locacion') ?? null;
+            $id_paciente    = $request->getPost('id_paciente') ?? null;
             $fecha_inicio   = $request->getPost('fecha_inicio') ?? null;
             $fecha_termino  = $request->getPost('fecha_termino') ?? null;
             $clave_usuario  = $request->getPost('usuario_solicitud') ?? null;
 
             try{
                 //  SE AGENDAN LAS CITAS DEL PACIENTE
-                $phql   = "SELECT * FROM fn_programar_citas(null,:id_locacion,:fecha_inicio,:fecha_termino,:clave_usuario);";
+                $phql   = "SELECT * FROM fn_programar_citas(:id_paciente,:id_locacion,:fecha_inicio,:fecha_termino,:clave_usuario);";
                 $values = array(
+                    'id_paciente'   => $id_paciente,
                     'id_locacion'   => $id_locacion,
                     'fecha_inicio'  => $fecha_inicio,
                     'fecha_termino' => $fecha_termino,
