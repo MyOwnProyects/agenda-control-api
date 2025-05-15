@@ -52,7 +52,7 @@ BEGIN
         WHERE b.estatus = 1 AND a.id_locacion = p_id_locacion;
     ELSE 
         --  SE VERIFICA QUE LAS FECHAS ESTEN EN EL RANGO DE LA APERTURA DE AGENDA
-        SELECT fecha_limite INTO fecha_validacion FROM tbapertura_agenda WHERE id_locacion = p_id_locacion ORDER BY fecha_termino DESC LIMIT 1;
+        SELECT fecha_limite INTO fecha_validacion FROM tbapertura_agenda WHERE id_locacion = p_id_locacion ORDER BY fecha_limite DESC LIMIT 1;
 
         IF fecha_validacion <> null AND p_fecha_termino > fecha_validacion THEN 
             RAISE EXCEPTION 'El rango de fechas ingresado sobrepasa a la fecha de apertura de agenda: (%)...',fecha_validacion;
