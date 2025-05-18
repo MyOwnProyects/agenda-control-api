@@ -240,6 +240,36 @@ return function (Micro $app,$di) {
                     }
                 }
 
+                if ($request->hasQuery('get_servicios')){
+                    $phql   = " SELECT 
+                                    t2.id as id_servicio,
+                                    t2.clave,
+                                    t2.nombre,
+                                    t3.duracion,
+                                    t3.costo
+                                FROM ctprofesionales_locaciones_servicios t1
+                                LEFT JOIN ctservicios t2 ON t1.id_servicio = t2.id
+                                LEFT JOIN ctlocaciones_servicios t3 ON t1.id_locacion = t3.id_locacion AND t1.id_servicio = t3.id_servicio
+                                WHERE t1.id_locacion = :id_locacion AND t1.id_profesional = :id_profesional
+                                ORDER BY t2.clave ASC";
+                    
+                    $values = array(
+                        'id_locacion'       => $id_locacion,
+                        'id_profesional'    => $row['id']
+                    );
+
+                    
+                    $result_servicios   = $db->query($phql,$values);
+                    $result_servicios->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_servicios){
+                        while($data_servicios   = $result_servicios->fetch()){
+                            $row['locacion_servicios'][]    = $data_servicios;
+                        }
+                    }
+                    
+                }
+
                 $data[]                     = $row;
             }
     
