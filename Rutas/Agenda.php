@@ -375,4 +375,212 @@ return function (Micro $app,$di) {
             return $response;
         }
     });
+
+    $app->post('/tbagenda_citas/create', function () use ($app,$db,$request) {
+        $conexion = $db; 
+        try{
+            $conexion->begin();
+            //  SE VERIFICAN LOS CAMPOS OBLIGATORIOS
+            $id_paciente        = $request->getPost('id_paciente');
+            $celular            = $request->getPost('celular');
+            $primer_apellido    = $request->getPost('primer_apellido');
+            $segundo_apellido   = $request->getPost('segundo_apellido');
+            $nombre             = $request->getPost('nombre');
+            $servicios          = $request->getPost('servicios');
+            $id_profesional     = $request->getPost('id_profesional');
+            $id_locacion        = $request->getPost('id_locacion');
+            $fecha_cita         = $request->getPost('fecha_cita');
+            $dia                = $request->getPost('dia');
+            $hora_inicio        = $request->getPost('hora_inicio');
+            $hora_termino       = $request->getPost('hora_termino');
+
+            //  SE VERIFICAN LOS CAMPOS OBLIGATORIOS
+            if (empty($id_profesional) || !is_numeric($id_profesional)){
+                throw new Exception('Identificador de Profesional vacio o no valido');
+            }
+
+            if (empty($id_locacion) || !is_numeric($id_locacion)){
+                throw new Exception('Identificador de locacion vacio o no valido');
+            }
+
+            if (empty($dia) || !is_numeric($id_locacion)){
+                throw new Exception('Dia vacio o no valido');
+            }
+
+            if (empty($fecha_cita)){
+                throw new Exception('Fecha de cita vacia o no valida');
+            }
+
+            $fecha_cita = date("Y-m-d", strtotime($fecha_cita));
+
+            if (empty($hora_inicio)){
+                throw new Exception('Fecha de cita vacia o no valida');
+            }
+
+            if (empty($hora_termino)){
+                throw new Exception('Fecha de cita vacia o no valida');
+            }
+
+            if (count($servicios) == 0){
+                throw new Exception('Fecha de cita vacia o no valida');
+            }
+
+            //  SE VERIFICA SI EL ID PACIENTE EXISTE Y NO ESTA DADO DE BAJA
+            if (!empty($id_paciente)){
+                $phql   = "SELECT * FROM ctpacientes WHERE id = :id_paciente";
+
+                $result = $db->query($phql, array(
+                    'id_paciente'   => $id_paciente
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                $flag_exist = false;
+                while ($data = $result->fetch()) {
+                    $flag_exist = true;
+                    if ($data['estatus'] != 1){
+                        throw new Exception("El paciente se encuentra dado de baja");
+                    }
+                }
+
+                if (!$flag_exist){
+                    throw new Exception('No existe registro del paciente seleccionado');
+                }
+            } else {
+                //  SE REALIZA EL REGISTRO DEL PACIENTE
+                if (empty($primer_apellido)){
+                    throw new Exception('Apellido paterno vacio');
+                }
+
+                if (empty($nombre)){
+                    throw new Exception('Nombre vacio');
+                }
+
+                if (empty($celular) || count($celular) != 10){
+                    throw new Exception('Formato de celular erroneo o el dato esta vacio');
+                }
+
+                //  SE CREA EL REGISTRO
+                // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
+                $phql = "SELECT * FROM ctpacientes a
+                        WHERE lower(a.primer_apellido) ILIKE :primer_apellido AND
+                            lower(a.segundo_apellido) ILIKE :segundo_apellido AND
+                            lower(a.nombre) ILIKE :nombre ";
+
+                $values = array(
+                    'primer_apellido'   => "%".FuncionesGlobales::ToLower($primer_apellido)."%",
+                    'segundo_apellido'  => "%".FuncionesGlobales::ToLower($segundo_apellido)."%",
+                    'nombre'            => "%".FuncionesGlobales::ToLower($nombre)."%",
+                );
+        
+                $result = $db->query($phql, $values);
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                while ($row = $result->fetch()) {
+                    throw new Exception('El paciente ya se encuentra registrado');
+                }
+        
+                // INSERTAR NUEVO USUARIO
+                $phql = "INSERT INTO ctpacientes (
+                                        clave, 
+                                        primer_apellido,
+                                        segundo_apellido,
+                                        nombre,
+                                        celular,
+                                        id_locacion_registro
+                                    ) 
+                        VALUES (
+                                    (select fn_crear_clave_paciente()), 
+                                    :primer_apellido,
+                                    :segundo_apellido,
+                                    :nombre,
+                                    :celular,
+                                    :id_locacion_registro
+                                ) RETURNING id";
+        
+                $values = [
+                    'primer_apellido'       => $primer_apellido,
+                    'segundo_apellido'      => $segundo_apellido,
+                    'nombre'                => $nombre,
+                    'celular'               => $celular,
+                    'id_locacion_registro'  => $id_locacion,
+                ];
+        
+                $result = $conexion->query($phql, $values);
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                if ($result) {
+                    while ($data = $result->fetch()) {
+                        $id_paciente    = $data['id'];
+                    }
+                }
+        
+                if (!is_numeric($id_paciente)) {
+                    throw new Exception('Error al crear el registro del paciente');
+                }
+            }
+
+            //  SE VERIFICA QUE EL DIA A CREAR NO SEA MENOR AL DIA DE HOY
+            $flag_exist = false;
+            $phql   = " SELECT 
+                            CASE WHEN TO_DATE(:fecha_cita, 'YYYY-MM-DD') < current_date THEN 0 ELSE 1 END as fecha_permitida, 
+                            CASE WHEN TO_DATE(:fecha_cita, 'YYYY-MM-DD') > fecha_limite THEN 0 ELSE 1 END as fecha_limite_apertura,
+                            current_date AS hoy,
+                            fecha_limite
+                        FROM tbapertura_agenda 
+                        WHERE id_locacion = :id_locacion 
+                        ORDER BY fecha_limite DESC LIMIT 1;";
+            $result = $conexion->query($phql, array(
+                'id_locacion'   => $id_locacion,
+                'fecha_cita'    => $fecha_cita
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    $flag_exist = true;
+                    if ($data['fecha_permitida'] != 1 ){
+                        throw new Exception('La fecha ingresada es menor al dia de hoy: '.$data['hoy']);
+                    }
+
+                    if ($data['fecha_limite_apertura'] != 1 ){
+                        throw new Exception('La fecha ingresada es mayor a la fecha limite de apertura de agenda: '.$data['fecha_limite_apertura']);
+                    }
+                }
+            }
+
+            if (!$flag_exist){
+                throw new Execption('No existe registro de apertura de agenda para la locaci&oacute;n');
+            }
+
+            try{
+                //  SE VERIFICA QUE EL DOCENTE O EL PACIENTE NO TENGAN UNA CITA
+                //  QUE SE EMPALME CON LA HORA SOLICITADA
+                $phql   = "SELECT * FROM fn_validar_citas_diarias(:id_profesional , :id_paciente, :fecha_cita AS DATE, :hora_inicio VARCHAR, :hora_termino VARCHAR)";
+                $result = $db->query($phql, array(
+                    'id_locacion'   => $id_locacion
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                $flag_validar   = false;
+                if ($result){
+                    while($data = $result->fetch()){
+                        $flag_create    = true;
+                    }
+                }
+
+            } catch(\Exception $err){
+                throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
+            }
+            
+
+            return json_encode(array('MSG' => 'OK'));
+
+
+        }catch (\Exception $e) { 
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
 };
