@@ -529,6 +529,7 @@ return function (Micro $app,$di) {
                         FROM tbapertura_agenda 
                         WHERE id_locacion = :id_locacion 
                         ORDER BY fecha_limite DESC LIMIT 1;";
+
             $result = $conexion->query($phql, array(
                 'id_locacion'   => $id_locacion,
                 'fecha_cita'    => $fecha_cita
