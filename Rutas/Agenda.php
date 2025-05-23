@@ -393,6 +393,7 @@ return function (Micro $app,$di) {
             $dia                = $request->getPost('dia');
             $hora_inicio        = $request->getPost('hora_inicio');
             $hora_termino       = $request->getPost('hora_termino');
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
 
             //  SE VERIFICAN LOS CAMPOS OBLIGATORIOS
             if (empty($id_profesional) || !is_numeric($id_profesional)){
@@ -411,7 +412,7 @@ return function (Micro $app,$di) {
                 throw new Exception('Fecha de cita vacia o no valida');
             }
 
-            $fecha_cita = date("Y-m-d", strtotime($fecha_cita));
+            $fecha_cita = DateTime::createFromFormat('d/m/Y', $fecha_cita)->format('Y-m-d');
 
             if (empty($hora_inicio)){
                 throw new Exception('Fecha de cita vacia o no valida');
@@ -423,6 +424,22 @@ return function (Micro $app,$di) {
 
             if (count($servicios) == 0){
                 throw new Exception('Fecha de cita vacia o no valida');
+            }
+
+            //  SE BUSCA EL ID DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
+            }
+
+            if ($id_usuario_solicitud == null){
+                throw new Exception('Usuario inexistente en el catalogo');
             }
 
             //  SE VERIFICA SI EL ID PACIENTE EXISTE Y NO ESTA DADO DE BAJA
@@ -556,9 +573,13 @@ return function (Micro $app,$di) {
             try{
                 //  SE VERIFICA QUE EL DOCENTE O EL PACIENTE NO TENGAN UNA CITA
                 //  QUE SE EMPALME CON LA HORA SOLICITADA
-                $phql   = "SELECT * FROM fn_validar_citas_diarias(:id_profesional , :id_paciente, :fecha_cita AS DATE, :hora_inicio VARCHAR, :hora_termino VARCHAR)";
+                $phql   = "SELECT * FROM fn_validar_citas_diarias(:id_profesional , :id_paciente, :fecha_cita, :hora_inicio, :hora_termino)";
                 $result = $db->query($phql, array(
-                    'id_locacion'   => $id_locacion
+                    'id_profesional'    => $id_profesional,
+                    'id_paciente'       => $id_paciente,
+                    'fecha_cita'        => $fecha_cita,
+                    'hora_inicio'       => $hora_inicio,
+                    'hora_termino'      => $hora_termino,
                 ));
                 $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
@@ -572,12 +593,78 @@ return function (Micro $app,$di) {
             } catch(\Exception $err){
                 throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
             }
-            
+
+            //  SE BUSCAN LOS COSTOS DE LOS SERVICIOS
+            $phql   = "SELECT * FROM ctlocaciones_servicios WHERE id_locacion = :id_locacion";
+            $result = $db->query($phql, array(
+                'id_locacion'   => $id_locacion,
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $arr_servicios  = array();
+            if ($result){
+                while($data = $result->fetch()){
+                    $arr_servicios[$data['id_servicio']]    = $data;
+                }
+            }
+
+            //  SE CREA EL REGISTRO DE LA CITA
+            $phql   = "INSERT INTO tbagenda_citas (id_locacion,id_paciente,fecha_cita,dia,hora_inicio,hora_termino,id_profesional,id_usuario_agenda,total) 
+                        VALUES(:id_locacion,:id_paciente,:fecha_cita,:dia,:hora_inicio,:hora_termino,:id_profesional,:id_usuario_agenda,0) RETURNING *;";
+
+            $values = array(
+                'id_locacion'       => $id_locacion,
+                'id_paciente'       => $id_paciente,
+                'fecha_cita'        => $fecha_cita,
+                'dia'               => $dia,
+                'hora_inicio'       => $hora_inicio,
+                'hora_termino'      => $hora_termino,
+                'id_profesional'    => $id_profesional,
+                'id_usuario_agenda' => $id_usuario_solicitud
+            );
+
+            $result = $conexion->query($phql, $values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            $id_agenda_cita = null;
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    $id_agenda_cita = $data['id'];
+                }
+            }
+
+            if ($id_agenda_cita == null){
+                throw new Exception('No se pudo realizar el registrode la cita');
+            }
+
+            $calcula_total  = 0;
+            foreach($servicios as $servicio){
+                $calcula_total  = $calcula_total + $servicio['costo'];
+                //  SE OBTIENEN LOS COSTOS REGISTRADOS POR SERVICIO
+                $phql   = "INSERT INTO tbagenda_citas_servicios (id_agenda_cita,id_servicio,duracion,costo)
+                            VALUES (:id_agenda_cita,:id_servicio,:duracion,:costo)";
+                $result = $conexion->execute($phql, array(
+                    'id_agenda_cita'    => $id_agenda_cita,
+                    'id_servicio'       => $servicio['id_servicio'],
+                    'duracion'          => $servicio['duracion'],
+                    'costo'             => $arr_servicios[$servicio['id_servicio']]['costo'],
+                ));
+            }
+
+            //  SE UPDATEA EL COSTO TOTAL
+            $phql   = "UPDATE tbagenda_citas SET total = :calcula_total WHERE id = :id_agenda_cita";
+            $conexion->execute($phql,array(
+                'calcula_total'     => $calcula_total,
+                'id_agenda_cita'    => $id_agenda_cita
+            ));
+
+            $conexion->commit();
 
             return json_encode(array('MSG' => 'OK'));
 
 
         }catch (\Exception $e) { 
+            $conexion->rollback();
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');

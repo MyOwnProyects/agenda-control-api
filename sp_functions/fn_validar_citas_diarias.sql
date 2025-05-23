@@ -16,11 +16,11 @@ BEGIN
     --  SE BUSCAN TODAS LAS CITAS DEL PROFESIONAL, INDEPENDIENTEMENTE DE LA INSTITUCION
     FOR v_citas IN 
         SELECT 
-            c.*,
+            a.*,
             (e.primer_apellido|| ' ' || COALESCE(e.segundo_apellido,'') || ' '|| e.nombre) as nombre_paciente
         FROM tbagenda_citas a 
         LEFT JOIN ctpacientes e ON a.id_paciente = e.id
-        WHERE (a.id_paciente = p_id_paciente OR b.id_profesional = p_id_profesional) AND a.fecha_cita = p_fecha_cita
+        WHERE (a.id_paciente = p_id_paciente OR a.id_profesional = p_id_profesional) AND a.fecha_cita = p_fecha_cita
     LOOP 
         --  SE VERIFICA QUE LA HORA INICIO NO SE EMPALME
         IF v_hora_inicio_time >= v_citas.hora_inicio::TIME AND v_hora_inicio_time < v_citas.hora_termino::TIME THEN
