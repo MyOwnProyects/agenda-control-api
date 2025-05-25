@@ -83,6 +83,7 @@ return function (Micro $app,$di) {
             $activa         = $request->getQuery('activa') ?? null;
             $id_profesional = $request->getQuery('id_profesional') ?? null;
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            $get_servicios      = $request->getQuery('get_servicios') ?? null;
 
             // Definir el query SQL
             $phql   = " SELECT  
@@ -97,7 +98,10 @@ return function (Micro $app,$di) {
                             (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
                             (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) as nombre_profesional,
                             a.id_profesional,
-                            b.celular
+                            b.celular,
+                            b.primer_apellido,
+                            COALESCE(b.segundo_apellido,'') as segundo_apellido,
+                            b.nombre
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
@@ -139,6 +143,21 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $data = [];
             while ($row = $result->fetch()) {
+                $row['servicios']   = array();
+                if (!empty($get_servicios)){
+                    $phql   = " SELECT 
+                                    a.*
+                                FROM tbagenda_citas_servicios a 
+                                WHERE a.id_agenda_cita = :id_agenda_cita";
+                    $result_servicios = $db->query($phql,array('id_agenda_cita' => $row['id_agenda_cita']));
+                    $result_servicios->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_servicios){
+                        while($data_servicios = $result_servicios->fetch()){
+                            $row['servicios'][] = $data_servicios;
+                        }
+                    }
+                }
                 $data[] = $row;
             }
     
@@ -376,7 +395,7 @@ return function (Micro $app,$di) {
         }
     });
 
-    $app->post('/tbagenda_citas/create', function () use ($app,$db,$request) {
+    $app->post('/tbagenda_citas/save', function () use ($app,$db,$request) {
         $conexion = $db; 
         try{
             $conexion->begin();
@@ -394,6 +413,7 @@ return function (Micro $app,$di) {
             $hora_inicio        = $request->getPost('hora_inicio');
             $hora_termino       = $request->getPost('hora_termino');
             $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $id_agenda_cita_anterior    = $request->getPost('id_agenda_cita');
 
             //  SE VERIFICAN LOS CAMPOS OBLIGATORIOS
             if (empty($id_profesional) || !is_numeric($id_profesional)){
@@ -442,6 +462,29 @@ return function (Micro $app,$di) {
                 throw new Exception('Usuario inexistente en el catalogo');
             }
 
+            //  SI TRAE ID_AGENDA_CITA, ESTA SE CANCELA POR EL MOTIVO INDICADO
+            if (!empty($id_agenda_cita_anterior)){
+                $phql   = "SELECT 1 FROM tbagenda_citas WHERE id = :id_agenda_cita AND estatus = 1 ";
+                $result = $db->query($phql, array(
+                    'id_agenda_cita'   => $id_agenda_cita_anterior
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                $flag_exist = false;
+                if ($result){
+                    while($data = $result->fetch()){
+                        $flag_exist = true;
+                        //  SE CANCELA LA CITA
+                        $phql   = "UPDATE tbagenda_citas";
+                    }
+                }
+
+                if (!$flag_exist){
+                    throw new Exception("No se puede editar la cita indicada ya que no se encuentra activa");
+                }
+            }
+            
+
             //  SE VERIFICA SI EL ID PACIENTE EXISTE Y NO ESTA DADO DE BAJA
             if (!empty($id_paciente)){
                 $phql   = "SELECT * FROM ctpacientes WHERE id = :id_paciente";
@@ -472,7 +515,9 @@ return function (Micro $app,$di) {
                     throw new Exception('Nombre vacio');
                 }
 
-                if (empty($celular) || count($celular) != 10){
+                $aqui   = 1;
+
+                if (empty($celular) || strlen($celular) != 10){
                     throw new Exception('Formato de celular erroneo o el dato esta vacio');
                 }
 
