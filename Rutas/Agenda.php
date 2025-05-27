@@ -464,7 +464,7 @@ return function (Micro $app,$di) {
 
             //  SI TRAE ID_AGENDA_CITA, ESTA SE CANCELA POR EL MOTIVO INDICADO
             if (!empty($id_agenda_cita_anterior)){
-                $phql   = "SELECT 1 FROM tbagenda_citas WHERE id = :id_agenda_cita AND estatus = 1 ";
+                $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita AND activa = 1 ";
                 $result = $db->query($phql, array(
                     'id_agenda_cita'   => $id_agenda_cita_anterior
                 ));
@@ -474,8 +474,29 @@ return function (Micro $app,$di) {
                 if ($result){
                     while($data = $result->fetch()){
                         $flag_exist = true;
-                        //  SE CANCELA LA CITA
-                        $phql   = "UPDATE tbagenda_citas";
+                        $id_paciente    = $data['id_paciente'];
+                        
+
+                        //  SE OBTIENE EL ID DEL MOTIVO CON CLAVE CAS
+                        $phql   = "SELECT * FROM ctmotivos_cancelacion_cita WHERE clave = 'CAS' ";
+                        $result_motivo  = $db->query($phql);
+                        $result_motivo->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                        while($data_motivo = $result_motivo->fetch()){
+                            $phql   = " UPDATE tbagenda_citas SET 
+                                        activa = 0, 
+                                        id_motivo_cancelacion = :id_motivo_cancelacion, 
+                                        fecha_cancelacion = now(),
+                                        id_usuario_cancelacion = :id_usuario_cancelacion
+                                        WHERE id = :id";
+                            $values = array(
+                                'id_motivo_cancelacion'     => $data['id'],
+                                'id_usuario_cancelacion'    => $id_usuario_solicitud,
+                                'id'                        => $id_agenda_cita_anterior
+                            );
+
+                            $result_update  = $conexion->execute($phql,$values);
+                        }
                     }
                 }
 
@@ -514,8 +535,6 @@ return function (Micro $app,$di) {
                 if (empty($nombre)){
                     throw new Exception('Nombre vacio');
                 }
-
-                $aqui   = 1;
 
                 if (empty($celular) || strlen($celular) != 10){
                     throw new Exception('Formato de celular erroneo o el dato esta vacio');
@@ -654,8 +673,8 @@ return function (Micro $app,$di) {
             }
 
             //  SE CREA EL REGISTRO DE LA CITA
-            $phql   = "INSERT INTO tbagenda_citas (id_locacion,id_paciente,fecha_cita,dia,hora_inicio,hora_termino,id_profesional,id_usuario_agenda,total) 
-                        VALUES(:id_locacion,:id_paciente,:fecha_cita,:dia,:hora_inicio,:hora_termino,:id_profesional,:id_usuario_agenda,0) RETURNING *;";
+            $phql   = "INSERT INTO tbagenda_citas (id_locacion,id_paciente,fecha_cita,dia,hora_inicio,hora_termino,id_profesional,id_usuario_agenda,total,id_cita_reagendada) 
+                        VALUES(:id_locacion,:id_paciente,:fecha_cita,:dia,:hora_inicio,:hora_termino,:id_profesional,:id_usuario_agenda,0,:id_cita_reagendada) RETURNING *;";
 
             $values = array(
                 'id_locacion'       => $id_locacion,
@@ -665,7 +684,8 @@ return function (Micro $app,$di) {
                 'hora_inicio'       => $hora_inicio,
                 'hora_termino'      => $hora_termino,
                 'id_profesional'    => $id_profesional,
-                'id_usuario_agenda' => $id_usuario_solicitud
+                'id_usuario_agenda' => $id_usuario_solicitud,
+                'id_cita_reagendada'    => $id_agenda_cita_anterior
             );
 
             $result = $conexion->query($phql, $values);
