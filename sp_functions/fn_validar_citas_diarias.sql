@@ -35,7 +35,7 @@ BEGIN
         END IF;
 
         --  SE VERIFICA QUE LA HORA DE INICIO Y TERMINO ENGLOBEN A LA HORA INDICADA
-        IF v_hora_inicio_time > v_citas.hora_inicio::TIME AND v_hora_termino_time > v_citas.hora_termino::TIME THEN
+        IF v_hora_inicio_time < v_citas.hora_inicio::TIME AND v_hora_termino_time > v_citas.hora_termino::TIME THEN
             RAISE EXCEPTION 'El paciente (%) cuenta con un horario asignado que genera conflictos:  D&iacute;a (%) de (%) a (%)...',v_citas.nombre_paciente,p_fecha_cita,p_hora_inicio,p_hora_termino;
         END IF;
 

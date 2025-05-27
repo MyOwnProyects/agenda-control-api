@@ -685,7 +685,7 @@ return function (Micro $app,$di) {
                 'hora_termino'      => $hora_termino,
                 'id_profesional'    => $id_profesional,
                 'id_usuario_agenda' => $id_usuario_solicitud,
-                'id_cita_reagendada'    => $id_agenda_cita_anterior
+                'id_cita_reagendada'    => is_numeric($id_agenda_cita_anterior) ? $id_agenda_cita_anterior : null 
             );
 
             $result = $conexion->query($phql, $values);
