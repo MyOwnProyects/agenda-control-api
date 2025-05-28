@@ -723,7 +723,7 @@ return function (Micro $app,$di) {
                 'id_agenda_cita'    => $id_agenda_cita
             ));
 
-            //  CAMBIO PARA MERGE
+            //  CAMBIO PARA DEV 
 
             $conexion->commit();
 
