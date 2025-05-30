@@ -738,4 +738,28 @@ return function (Micro $app,$di) {
             return $response;
         }
     });
+
+    $app->get('/tbagenda_citas/get_today', function () use ($app,$db,$request) {
+        try{
+            $today  = '';
+            $phql   = "SELECT current_date as today";
+
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+            if ($result){
+                while($data = $result->fetch()){
+                    $today  = $data['today'];
+                }
+            }
+
+            return json_encode(array('today' => $today));
+
+        }catch (\Exception $e) { 
+            $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
 };
