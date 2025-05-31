@@ -80,7 +80,8 @@ BEGIN
                 b.id_cita_programada,
                 b.id_servicio,
                 b.id_profesional,
-                e.costo
+                e.costo,
+                e.duracion
             FROM tbcitas_programadas_servicios_horarios a 
             LEFT JOIN tbcitas_programadas_servicios b ON a.id_cita_programada_servicio = b.id
             LEFT JOIN tbcitas_programadas c ON b.id_cita_programada = c.id 
@@ -117,13 +118,13 @@ BEGIN
 
                 v_id_agenda_cita    := null;
 
-                INSERT INTO tbagenda_citas (id_paciente,id_locacion,fecha_cita,dia,hora_inicio,hora_termino,id_usuario_agenda,id_cita_programada,id_profesional)
-                VALUES (arr_info_cita.id_paciente,p_id_locacion,fecha_actual,i,arr_info_cita.hora_inicio,arr_info_cita.hora_termino,v_id_usuario_agenda,arr_info_cita.id_cita_programada,arr_info_cita.id_profesional) 
+                INSERT INTO tbagenda_citas (id_paciente,id_locacion,fecha_cita,dia,hora_inicio,hora_termino,id_usuario_agenda,id_cita_programada,id_profesional,total)
+                VALUES (arr_info_cita.id_paciente,p_id_locacion,fecha_actual,i,arr_info_cita.hora_inicio,arr_info_cita.hora_termino,v_id_usuario_agenda,arr_info_cita.id_cita_programada,arr_info_cita.id_profesional,arr_info_cita.costo) 
                 RETURNING id INTO v_id_agenda_cita;
 
                 --  SE CREA REGISTRO DEL SERVICIO
-                INSERT INTO tbagenda_citas_servicios (id_agenda_cita,id_servicio,costo)
-                VALUES (v_id_agenda_cita,arr_info_cita.id_servicio,arr_info_cita.costo);
+                INSERT INTO tbagenda_citas_servicios (id_agenda_cita,id_servicio,costo,duracion)
+                VALUES (v_id_agenda_cita,arr_info_cita.id_servicio,arr_info_cita.costo,arr_info_cita.duracion);
 
                 count_citas := count_citas + 1;
 

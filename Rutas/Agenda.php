@@ -154,7 +154,8 @@ return function (Micro $app,$di) {
 
                     if ($result_servicios){
                         while($data_servicios = $result_servicios->fetch()){
-                            $row['servicios'][] = $data_servicios;
+                            $data_servicios['duracion'] = $data_servicios['duracion'] / 60;
+                            $row['servicios'][]         = $data_servicios;
                         }
                     }
                 }
@@ -711,7 +712,7 @@ return function (Micro $app,$di) {
                 $result = $conexion->execute($phql, array(
                     'id_agenda_cita'    => $id_agenda_cita,
                     'id_servicio'       => $servicio['id_servicio'],
-                    'duracion'          => $servicio['duracion'],
+                    'duracion'          => $servicio['duracion'] * 60,
                     'costo'             => $arr_servicios[$servicio['id_servicio']]['costo'],
                 ));
             }
