@@ -154,7 +154,8 @@ return function (Micro $app,$di) {
 
                     if ($result_servicios){
                         while($data_servicios = $result_servicios->fetch()){
-                            $row['servicios'][] = $data_servicios;
+                            $data_servicios['duracion'] = $data_servicios['duracion'] / 60;
+                            $row['servicios'][]         = $data_servicios;
                         }
                     }
                 }
@@ -414,6 +415,7 @@ return function (Micro $app,$di) {
             $hora_termino       = $request->getPost('hora_termino');
             $usuario_solicitud  = $request->getPost('usuario_solicitud');
             $id_agenda_cita_anterior    = $request->getPost('id_agenda_cita');
+            $accion                     = $request->getPost('accion');
 
             //  SE VERIFICAN LOS CAMPOS OBLIGATORIOS
             if (empty($id_profesional) || !is_numeric($id_profesional)){
@@ -475,11 +477,13 @@ return function (Micro $app,$di) {
                     while($data = $result->fetch()){
                         $flag_exist = true;
                         $id_paciente    = $data['id_paciente'];
-                        
+
+                        //  SI VIENE EL CHECK DE CAMBIO DE DIA SE MARCA COMO REAGENDADO
+                        $clave_cancelacion  = $accion == 'reagendar_cita' ? 'REA' : 'HOS';
 
                         //  SE OBTIENE EL ID DEL MOTIVO CON CLAVE CAS
-                        $phql   = "SELECT * FROM ctmotivos_cancelacion_cita WHERE clave = 'CAS' ";
-                        $result_motivo  = $db->query($phql);
+                        $phql   = "SELECT * FROM ctmotivos_cancelacion_cita WHERE clave = :clave ";
+                        $result_motivo  = $db->query($phql,array('clave' => $clave_cancelacion));
                         $result_motivo->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
                         while($data_motivo = $result_motivo->fetch()){
@@ -711,7 +715,7 @@ return function (Micro $app,$di) {
                 $result = $conexion->execute($phql, array(
                     'id_agenda_cita'    => $id_agenda_cita,
                     'id_servicio'       => $servicio['id_servicio'],
-                    'duracion'          => $servicio['duracion'],
+                    'duracion'          => $servicio['duracion'] * 60,
                     'costo'             => $arr_servicios[$servicio['id_servicio']]['costo'],
                 ));
             }
@@ -729,6 +733,30 @@ return function (Micro $app,$di) {
 
             return json_encode(array('MSG' => 'OK'));
 
+
+        }catch (\Exception $e) { 
+            $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->get('/tbagenda_citas/get_today', function () use ($app,$db,$request) {
+        try{
+            $today  = '';
+            $phql   = "SELECT current_date as today";
+
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+            if ($result){
+                while($data = $result->fetch()){
+                    $today  = $data['today'];
+                }
+            }
+
+            return json_encode(array('today' => $today));
 
         }catch (\Exception $e) { 
             $conexion->rollback();
