@@ -265,7 +265,7 @@ return function (Micro $app,$di) {
                     if ($result_servicios){
                         while($data_servicios   = $result_servicios->fetch()){
                             $data_servicios['duracion_minutos'] = $data_servicios['duracion'] / 60;
-                            $row['locacion_servicios'][]        = $data_servicios;
+                            $row['servicios'][]                 = $data_servicios;
                         }
                     }
                     
