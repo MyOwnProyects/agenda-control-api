@@ -416,6 +416,7 @@ return function (Micro $app,$di) {
             $usuario_solicitud  = $request->getPost('usuario_solicitud');
             $id_agenda_cita_anterior    = $request->getPost('id_agenda_cita');
             $accion                     = $request->getPost('accion');
+            $id_cita_programada         = null;
 
             //  SE VERIFICAN LOS CAMPOS OBLIGATORIOS
             if (empty($id_profesional) || !is_numeric($id_profesional)){
@@ -476,7 +477,8 @@ return function (Micro $app,$di) {
                 if ($result){
                     while($data = $result->fetch()){
                         $flag_exist = true;
-                        $id_paciente    = $data['id_paciente'];
+                        $id_paciente        = $data['id_paciente'];
+                        $id_cita_programada = $data['id_cita_programada'];
 
                         //  SI VIENE EL CHECK DE CAMBIO DE DIA SE MARCA COMO REAGENDADO
                         $clave_cancelacion  = $accion == 'reagendar_cita' ? 'REA' : 'HOS';
@@ -486,21 +488,28 @@ return function (Micro $app,$di) {
                         $result_motivo  = $db->query($phql,array('clave' => $clave_cancelacion));
                         $result_motivo->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
+                        $id_motivo_cancelacion  = null;
                         while($data_motivo = $result_motivo->fetch()){
-                            $phql   = " UPDATE tbagenda_citas SET 
+                            $id_motivo_cancelacion  = $data['id'];
+                        }
+
+                        if ($id_motivo_cancelacion == null){
+                            throw new Exception('Error al obtener el motivo de la cancelacion');
+                        }
+
+                        $phql   = " UPDATE tbagenda_citas SET 
                                         activa = 0, 
                                         id_motivo_cancelacion = :id_motivo_cancelacion, 
                                         fecha_cancelacion = now(),
                                         id_usuario_cancelacion = :id_usuario_cancelacion
-                                        WHERE id = :id";
-                            $values = array(
-                                'id_motivo_cancelacion'     => $data['id'],
-                                'id_usuario_cancelacion'    => $id_usuario_solicitud,
-                                'id'                        => $id_agenda_cita_anterior
-                            );
+                                    WHERE id = :id";
+                        $values = array(
+                            'id_motivo_cancelacion'     => $id_motivo_cancelacion,
+                            'id_usuario_cancelacion'    => $id_usuario_solicitud,
+                            'id'                        => $id_agenda_cita_anterior
+                        );
 
-                            $result_update  = $conexion->execute($phql,$values);
-                        }
+                        $result_update  = $conexion->execute($phql,$values);
                     }
                 }
 
@@ -677,8 +686,8 @@ return function (Micro $app,$di) {
             }
 
             //  SE CREA EL REGISTRO DE LA CITA
-            $phql   = "INSERT INTO tbagenda_citas (id_locacion,id_paciente,fecha_cita,dia,hora_inicio,hora_termino,id_profesional,id_usuario_agenda,total,id_cita_reagendada) 
-                        VALUES(:id_locacion,:id_paciente,:fecha_cita,:dia,:hora_inicio,:hora_termino,:id_profesional,:id_usuario_agenda,0,:id_cita_reagendada) RETURNING *;";
+            $phql   = "INSERT INTO tbagenda_citas (id_locacion,id_paciente,fecha_cita,dia,hora_inicio,hora_termino,id_profesional,id_usuario_agenda,total,id_cita_reagendada,id_cita_programada) 
+                        VALUES(:id_locacion,:id_paciente,:fecha_cita,:dia,:hora_inicio,:hora_termino,:id_profesional,:id_usuario_agenda,0,:id_cita_reagendada,:id_cita_programada) RETURNING *;";
 
             $values = array(
                 'id_locacion'       => $id_locacion,
@@ -689,7 +698,8 @@ return function (Micro $app,$di) {
                 'hora_termino'      => $hora_termino,
                 'id_profesional'    => $id_profesional,
                 'id_usuario_agenda' => $id_usuario_solicitud,
-                'id_cita_reagendada'    => is_numeric($id_agenda_cita_anterior) ? $id_agenda_cita_anterior : null 
+                'id_cita_reagendada'    => is_numeric($id_agenda_cita_anterior) ? $id_agenda_cita_anterior : null, 
+                'id_cita_programada'    => $id_cita_programada
             );
 
             $result = $conexion->query($phql, $values);
