@@ -101,7 +101,8 @@ return function (Micro $app,$di) {
                             b.celular,
                             b.primer_apellido,
                             COALESCE(b.segundo_apellido,'') as segundo_apellido,
-                            b.nombre
+                            b.nombre,
+                            a.total
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
@@ -146,8 +147,10 @@ return function (Micro $app,$di) {
                 $row['servicios']   = array();
                 if (!empty($get_servicios)){
                     $phql   = " SELECT 
-                                    a.*
+                                    a.*,
+                                    b.nombre as nombre_servicio
                                 FROM tbagenda_citas_servicios a 
+                                LEFT JOIN ctservicios b ON a.id_servicio = b.id
                                 WHERE a.id_agenda_cita = :id_agenda_cita";
                     $result_servicios = $db->query($phql,array('id_agenda_cita' => $row['id_agenda_cita']));
                     $result_servicios->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
