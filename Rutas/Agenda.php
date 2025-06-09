@@ -102,7 +102,9 @@ return function (Micro $app,$di) {
                             b.primer_apellido,
                             COALESCE(b.segundo_apellido,'') as segundo_apellido,
                             b.nombre,
-                            a.total
+                            a.total,
+                            a.id_cita_reagendada,
+                            a.id_paciente
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
