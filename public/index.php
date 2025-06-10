@@ -17,15 +17,31 @@ $config = require '../config.php';
 
 // Crear el contenedor de inyección de dependencias
 $di = new FactoryDefault();
-$di->set('db', function () use ($config) {
+// $di->set('db', function () use ($config) {
+//     return new PdoPostgres([
+//         'host'      => $config['database']['host'],
+//         'username'  => $config['database']['username'],
+//         'password'  => $config['database']['password'],
+//         'dbname'    => $config['database']['dbname'],
+//         'port'      => $config['database']['port']
+//     ]);
+// });
+
+$di->setShared('db', function () use ($config) {
     return new PdoPostgres([
         'host'      => $config['database']['host'],
         'username'  => $config['database']['username'],
         'password'  => $config['database']['password'],
         'dbname'    => $config['database']['dbname'],
-        'port'      => $config['database']['port']
+        'port'      => $config['database']['port'],
+        'sslmode'   => 'require',
+        'sslrootcert' => $config['database']['sslrootcert'],
+        'options'   => [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+        ]
     ]);
 });
+
 
 // 🔹 Registrar el servicio 'request' en el DI (Corrección del error)
 $di->setShared('request', function () {
