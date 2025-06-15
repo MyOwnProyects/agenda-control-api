@@ -21,6 +21,7 @@ return function (Micro $app,$di) {
             $fecha_inicio   = $request->getQuery('fecha_inicio') ?? null;
             $fecha_termino  = $request->getQuery('fecha_termino') ?? null;
             $from_catalog   = $request->getQuery('from_catalog') ?? null;
+            $tipo_busqueda   = $request->getQuery('tipo_busqueda') ?? null;
             
             if ($from_catalog && (empty($fecha_inicio) || empty($fecha_termino))){
                 throw new Exception('Rango de fechas vacio');
@@ -37,6 +38,24 @@ return function (Micro $app,$di) {
                 $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
                 $values['fecha_inicio']     = $fecha_inicio;
                 $values['fecha_termino']    = $fecha_termino;
+            }
+
+            if (is_numeric($id_profesional)){
+                $phql           .= " AND a.id_profesional = :id_profesional";
+                $values['id_profesional']   = $id_profesional;
+            }
+
+            if (is_numeric($id_paciente)){
+                $phql           .= " AND a.id_paciente = :id_paciente";
+                $values['id_paciente']  = $id_paciente;
+            }
+
+            if (!empty($tipo_busqueda)){
+                if ($tipo_busqueda == 'activas'){
+                    $phql   .= " AND a.activa = 1 ";
+                } elseif ($tipo_busqueda == 'canceladas'){
+                    $phql   .= " AND a.activa = 0 ";
+                }
             }
 
             // Ejecutar el query y obtener el resultado
@@ -72,11 +91,13 @@ return function (Micro $app,$di) {
             $rango_fechas   = $request->getQuery('rango_fechas') ?? null;
             $activa         = $request->getQuery('activa') ?? null;
             $id_profesional = $request->getQuery('id_profesional') ?? null;
+            $id_paciente    = $request->getQuery('id_paciente') ?? null;
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
             $get_servicios      = $request->getQuery('get_servicios') ?? null;
             $fecha_inicio       = $request->getQuery('fecha_inicio') ?? null;
             $fecha_termino      = $request->getQuery('fecha_termino') ?? null;
             $from_catalog       = $request->getQuery('from_catalog') ?? null;
+            $tipo_busqueda      = $request->getQuery('tipo_busqueda') ?? null;
 
             // Definir el query SQL
             $phql   = " SELECT  
@@ -97,7 +118,8 @@ return function (Micro $app,$di) {
                             b.nombre,
                             a.total,
                             a.id_cita_reagendada,
-                            a.id_paciente
+                            a.id_paciente,
+                            a.activa
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
@@ -136,6 +158,19 @@ return function (Micro $app,$di) {
                 $values['id_profesional']   = $id_profesional;
             }
 
+            if (is_numeric($id_paciente)){
+                $phql           .= " AND a.id_paciente = :id_paciente";
+                $values['id_paciente']  = $id_paciente;
+            }
+
+            if (!empty($tipo_busqueda)){
+                if ($tipo_busqueda == 'activas'){
+                    $phql   .= " AND a.activa = 1 ";
+                } elseif ($tipo_busqueda == 'canceladas'){
+                    $phql   .= " AND a.activa = 0 ";
+                }
+            }
+
             $phql   .= ' ORDER BY a.fecha_cita,a.hora_inicio,a.hora_termino ';
 
             if ($request->hasQuery('offset')){
@@ -150,6 +185,7 @@ return function (Micro $app,$di) {
             $data = [];
             while ($row = $result->fetch()) {
                 $row['servicios']   = array();
+                $row['estatus']     = $row['activa'] == 1 ? 'ACTIVA' : 'CANCELADA';
                 if (!empty($get_servicios)){
                     $phql   = " SELECT 
                                     a.*,
