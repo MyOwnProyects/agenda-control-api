@@ -113,6 +113,10 @@ return function (Micro $app,$di) {
             }
 
             $phql   .= " ORDER BY a.clave,a.nombre ";
+
+            if ($request->hasQuery('offset')){
+                $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
+            }
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);

@@ -33,6 +33,10 @@ return function (Micro $app,$di) {
             }
 
             $phql   .= ' ORDER BY a.label_controlador,a.label_accion ';
+
+            if ($request->hasQuery('offset')){
+                $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
+            }
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);

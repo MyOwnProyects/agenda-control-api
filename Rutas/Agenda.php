@@ -15,11 +15,15 @@ return function (Micro $app,$di) {
     $app->get('/tbagenda_citas/count', function () use ($app,$db,$request) {
         try{
             $id     = $request->getQuery('id');
-            $clave  = $request->getQuery('clave');
-            $nombre = $request->getQuery('nombre');
+            $id_locacion    = $request->getQuery('id_locacion') ?? null;
+            $id_profesional = $request->getQuery('id_profesional') ?? null;
+            $id_paciente    = $request->getQuery('id_paciente') ?? null;
+            $fecha_inicio   = $request->getQuery('fecha_inicio') ?? null;
+            $fecha_termino  = $request->getQuery('fecha_termino') ?? null;
+            $from_catalog   = $request->getQuery('from_catalog') ?? null;
             
-            if ($id != null && !is_numeric($id)){
-                throw new Exception("Parametro de id invalido");
+            if ($from_catalog && (empty($fecha_inicio) || empty($fecha_termino))){
+                throw new Exception('Rango de fechas vacio');
             }
         
             // Definir el query SQL
@@ -28,25 +32,11 @@ return function (Micro $app,$di) {
                         FROM tbagenda_citas a 
                         WHERE 1 = 1 ";
             $values = array();
-    
-            if (is_numeric($id)){
-                $phql           .= " AND a.id = :id";
-                $values['id']   = $id;
-            }
 
-            if (!empty($clave) && (empty($accion) || $accion != 'login')) {
-                $phql           .= " AND lower(a.clave) ILIKE :clave";
-                $values['clave'] = "%".FuncionesGlobales::ToLower($clave)."%";
-            }
-
-            if (!empty($accion) && $accion == 'login'){
-                $phql               .= " AND a.clave = :username";
-                $values['username'] = $username;
-            }
-
-            if (!empty($nombre)) {
-                $phql           .= " AND lower(a.nombre) ILIKE :nombre";
-                $values['nombre'] = "%".FuncionesGlobales::ToLower($nombre)."%";
+            if ($from_catalog){
+                $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
+                $values['fecha_inicio']     = $fecha_inicio;
+                $values['fecha_termino']    = $fecha_termino;
             }
 
             // Ejecutar el query y obtener el resultado
@@ -84,6 +74,9 @@ return function (Micro $app,$di) {
             $id_profesional = $request->getQuery('id_profesional') ?? null;
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
             $get_servicios      = $request->getQuery('get_servicios') ?? null;
+            $fecha_inicio       = $request->getQuery('fecha_inicio') ?? null;
+            $fecha_termino      = $request->getQuery('fecha_termino') ?? null;
+            $from_catalog       = $request->getQuery('from_catalog') ?? null;
 
             // Definir el query SQL
             $phql   = " SELECT  
@@ -127,6 +120,12 @@ return function (Micro $app,$di) {
                 $values['fecha_termino']    = $rango_fechas['fecha_termino'];
             }
 
+            if ($from_catalog){
+                $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
+                $values['fecha_inicio']     = $fecha_inicio;
+                $values['fecha_termino']    = $fecha_termino;
+            }
+
             if (is_numeric($activa)){
                 $phql               .= " AND a.activa = :activa";
                 $values['activa']   = $activa;
@@ -138,6 +137,10 @@ return function (Micro $app,$di) {
             }
 
             $phql   .= ' ORDER BY a.fecha_cita,a.hora_inicio,a.hora_termino ';
+
+            if ($request->hasQuery('offset')){
+                $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
+            }
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -163,6 +166,11 @@ return function (Micro $app,$di) {
                             $row['servicios'][]         = $data_servicios;
                         }
                     }
+                }
+
+                if ($from_catalog){
+                    $row['hora_cita']  = $row['start'] . ' - ' . $row['end'];
+                    $row['num_servicios'] = count($row['servicios']);
                 }
                 $data[] = $row;
             }

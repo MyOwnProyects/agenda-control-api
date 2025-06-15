@@ -17,6 +17,10 @@ return function (Micro $app,$di) {
             //  SE BUSCA SI EXISTE UN REGISTRO DE APERTURA DE AGENDA
             $phql   = "SELECT * FROM ctmotivos_cancelacion_cita WHERE visible = 1 ORDER BY clave ASC";
 
+            if ($request->hasQuery('offset')){
+                $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
+            }
+
             $result = $db->query($phql);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
