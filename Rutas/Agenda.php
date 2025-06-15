@@ -119,10 +119,20 @@ return function (Micro $app,$di) {
                             a.total,
                             a.id_cita_reagendada,
                             a.id_paciente,
-                            a.activa
+                            a.activa,
+                            d.nombre as nombre_locacion,
+                            a.fecha_captura,
+                            a.fecha_cancelacion,
+                            e.nombre as motivo_cancelacion,
+                            (f.primer_apellido|| ' ' ||COALESCE(f.segundo_apellido,'')||' '||f.nombre) as usuario_cancelacion,
+                            (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as usuario_captura
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
+                        LEFT JOIN ctlocaciones d ON a.id_locacion = d.id
+                        LEFT JOIN ctmotivos_cancelacion_cita e ON a.id_motivo_cancelacion = e.id
+                        LEFT JOIN ctusuarios f ON a.id_usuario_cancelacion = f.id
+                        LEFT JOIN ctusuarios g ON a.id_usuario_agenda = g.id
                         WHERE 1 = 1 ";
             $values = array();
     
