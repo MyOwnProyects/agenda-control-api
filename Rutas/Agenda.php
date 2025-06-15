@@ -125,7 +125,8 @@ return function (Micro $app,$di) {
                             a.fecha_cancelacion,
                             e.nombre as motivo_cancelacion,
                             (f.primer_apellido|| ' ' ||COALESCE(f.segundo_apellido,'')||' '||f.nombre) as usuario_cancelacion,
-                            (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as usuario_captura
+                            (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as usuario_captura,
+                            a.observaciones_cancelacion
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
