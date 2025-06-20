@@ -126,7 +126,9 @@ return function (Micro $app,$di) {
                             e.nombre as motivo_cancelacion,
                             (f.primer_apellido|| ' ' ||COALESCE(f.segundo_apellido,'')||' '||f.nombre) as usuario_cancelacion,
                             (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as usuario_captura,
-                            a.observaciones_cancelacion
+                            a.observaciones_cancelacion,
+                            (CASE WHEN a.fecha_cita < NOW()::DATE THEN 1 ELSE 0 END) as vencida,
+                            a.id_locacion
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
