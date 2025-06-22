@@ -352,7 +352,7 @@ return function (Micro $app,$di) {
             }
 
             //  SE VERIFICA QUE LA CITA SE ENCUENTRE ACTIVA
-            $phql   = "SELECT *  FROM tbagenda_citas WHERE id = :id_agenda_cita AND activa = 1";
+            $phql   = "SELECT *  FROM tbagenda_citas WHERE id = :id_agenda_cita AND (activa = 1 OR fecha_cita < now()::DATE )";
             
             $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
@@ -365,7 +365,7 @@ return function (Micro $app,$di) {
             }
 
             if (!$flag_activa){
-                throw new Exception('La cita ya se encuentra cancelada');
+                throw new Exception('la cita ya no se encuentra disponible para realizar la solicitud indicada');
             }
 
             $phql   = " UPDATE tbagenda_citas SET 
@@ -420,7 +420,7 @@ return function (Micro $app,$di) {
             }
             
             // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
-            $phql = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita AND asistencia <> :estatus_asistencia_actual";
+            $phql = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita AND (asistencia <> :estatus_asistencia_actual OR fecha_cita < now()::DATE";
     
             $result = $db->query($phql, array(
                 'id_agenda_cita'    => $id_agenda_cita,
@@ -429,7 +429,7 @@ return function (Micro $app,$di) {
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
     
             while ($row = $result->fetch()) {
-                throw new Exception('El estatus de la asistencia ha sido modificado previamentem, te sugerimos refrescar la vista.');
+                throw new Exception('El estatus de la asistencia ha sido modificado previamente o la cita ya no se encuentra disponible para realizar las modificaciones solicitadas, te sugerimos refrescar la vista.');
             }
     
             // INSERTAR NUEVO servicio
@@ -552,7 +552,7 @@ return function (Micro $app,$di) {
 
                         $id_motivo_cancelacion  = null;
                         while($data_motivo = $result_motivo->fetch()){
-                            $id_motivo_cancelacion  = $data['id'];
+                            $id_motivo_cancelacion  = $data_motivo['id'];
                         }
 
                         if ($id_motivo_cancelacion == null){
