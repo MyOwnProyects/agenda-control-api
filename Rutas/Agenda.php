@@ -545,6 +545,10 @@ return function (Micro $app,$di) {
                         //  SI VIENE EL CHECK DE CAMBIO DE DIA SE MARCA COMO REAGENDADO
                         $clave_cancelacion  = $accion == 'reagendar_cita' ? 'REA' : 'HOS';
 
+                        if ($id_profesional != $data['id_profesional']){
+                            $clave_cancelacion  = 'CAP';
+                        }
+
                         //  SE OBTIENE EL ID DEL MOTIVO CON CLAVE CAS
                         $phql   = "SELECT * FROM ctmotivos_cancelacion_cita WHERE clave = :clave ";
                         $result_motivo  = $db->query($phql,array('clave' => $clave_cancelacion));
