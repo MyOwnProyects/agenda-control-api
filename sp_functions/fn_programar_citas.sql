@@ -14,6 +14,7 @@ DECLARE
     count_citas             INT;
     v_dias                  INT;
     v_id_usuario_agenda     INT;
+    v_id_motivo_cancelacion INT;
 BEGIN
 
     --  VALIDACION DE FECHA DE INICIO
@@ -63,9 +64,18 @@ BEGIN
 
     RAISE NOTICE 'PACIENTES (%)', arr_id_paciente;
 
-    --  SE BORRAN TODOS LOS REGISTROS YA EXISTENTES EN LA AGENDA QUE SEAN DE CITAS PROGRAMADAS
+    --  SE CANCELAN TODOS LOS REGISTROS ACTIVOS YA EXISTENTES EN LA AGENDA QUE SEAN DE CITAS PROGRAMADAS
     --  DE LOS PACIENTES QUE ESTEN EN EL RANGO DE FECHAS DE FECHA_INICO Y FECHA_INICIO + V_DIAS
-    DELETE FROM tbagenda_citas WHERE id_paciente = ANY (arr_id_paciente) AND fecha_cita::DATE between p_fecha_inicio and p_fecha_inicio::date + (v_dias || ' days')::interval;
+    --DELETE FROM tbagenda_citas WHERE id_paciente = ANY (arr_id_paciente) AND fecha_cita::DATE between p_fecha_inicio and p_fecha_inicio::date + (v_dias || ' days')::interval;
+    SELECT id INTO v_id_motivo_cancelacion FROM ctmotivos_cancelacion_cita WHERE clave = 'APA';
+
+    UPDATE tbagenda_citas SET 
+        activa = 0, 
+        id_motivo_cancelacion = v_id_motivo_cancelacion, 
+        id_usuario_cancelacion = v_id_usuario_agenda, 
+        fecha_cancelacion = NOW(),
+        observaciones_cancelacion = 'SE REALIZO UNA NUEVA APERTURA DE AGENDA EN LAS FECHAS DE ESTA CITA'
+    WHERE id_paciente = ANY (arr_id_paciente) and activa = 1 AND fecha_cita::DATE between p_fecha_inicio and p_fecha_inicio::date + (v_dias || ' days')::interval;
 
     count_pacientes := COUNT(arr_id_paciente);
     count_citas     := 0;

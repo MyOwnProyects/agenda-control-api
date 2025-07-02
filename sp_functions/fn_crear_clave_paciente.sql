@@ -9,9 +9,9 @@ BEGIN
     SELECT to_char(NOW(), 'YYMM')::TEXT INTO inicio_clave;
 
     SELECT 
-        RIGHT(LPAD(CAST((GREATEST(COUNT(*), 1) + 1) AS TEXT), 4, '0'), 4) INTO num_pacientes
+        RIGHT(LPAD(CAST(GREATEST(COUNT(*), 0) + 1 AS TEXT), 4, '0'), 4) INTO num_pacientes
     FROM ctpacientes
-    WHERE clave ILIKE inicio_clave || '%';
+    WHERE clave ILIKE '2506' || '%';
 
     -- Aquí puedes generar la clave como desees
     clave_generada  := inicio_clave || num_pacientes;
