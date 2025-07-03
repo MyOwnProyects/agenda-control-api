@@ -11,7 +11,7 @@ BEGIN
     SELECT 
         RIGHT(LPAD(CAST(GREATEST(COUNT(*), 0) + 1 AS TEXT), 4, '0'), 4) INTO num_pacientes
     FROM ctpacientes
-    WHERE clave ILIKE '2506' || '%';
+    WHERE clave ILIKE inicio_clave || '%';
 
     -- Aquí puedes generar la clave como desees
     clave_generada  := inicio_clave || num_pacientes;
