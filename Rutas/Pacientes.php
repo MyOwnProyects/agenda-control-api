@@ -126,7 +126,14 @@ return function (Micro $app,$di) {
                             a.*,
                             (a.primer_apellido|| ' ' ||COALESCE(a.segundo_apellido,'')||' '||a.nombre) as nombre_completo,
                             COALESCE(b.num_servicios,0) as num_servicios,
-                            c.nombre as locacion_registro
+                            c.nombre as locacion_registro,
+                            a.fecha_nacimiento,
+                            CASE 
+                                WHEN fecha_nacimiento IS NOT NULL THEN
+                                ROUND(EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento)) 
+                                        + EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento)) / 12.0, 1)
+                                ELSE NULL
+                            END AS edad_actual
                         FROM ctpacientes a 
                         LEFT JOIN (
                             SELECT t1.id_paciente, COUNT(1) as num_servicios
@@ -230,6 +237,7 @@ return function (Micro $app,$di) {
             $nombre             = $request->getPost('nombre') ?? null;
             $celular            = $request->getPost('celular') ?? null;
             $id_locacion_registro   = $request->getPost('id_locacion_registro') ?? null;
+            $fecha_nacimiento       = $request->getPost('fecha_nacimiento') ?? null;
            
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
@@ -279,7 +287,8 @@ return function (Micro $app,$di) {
                                     segundo_apellido,
                                     nombre,
                                     celular,
-                                    id_locacion_registro
+                                    id_locacion_registro,
+                                    fecha_nacimiento
                                 ) 
                      VALUES (
                                 (select fn_crear_clave_paciente()), 
@@ -287,7 +296,8 @@ return function (Micro $app,$di) {
                                 :segundo_apellido,
                                 :nombre,
                                 :celular,
-                                :id_locacion_registro
+                                :id_locacion_registro,
+                                :fecha_nacimiento
                             ) RETURNING id";
     
             $values = [
@@ -296,7 +306,7 @@ return function (Micro $app,$di) {
                 'nombre'                => $nombre,
                 'celular'               => $celular,
                 'id_locacion_registro'  => $id_locacion_registro,
-                
+                'fecha_nacimiento'      => $fecha_nacimiento
             ];
     
             $result = $conexion->query($phql, $values);
@@ -312,6 +322,106 @@ return function (Micro $app,$di) {
             if (!$id_paciente) {
                 throw new Exception('Error al crear el registro');
             }
+
+            $conexion->commit();
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $conexion->rollback();
+            
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->put('/ctpacientes/update', function () use ($app, $db, $request) {
+        $conexion = $db; 
+        try {
+            $conexion->begin();
+    
+            // OBTENER DATOS JSON
+            $id                 = $request->getPost('id') ?? null;
+            $primer_apellido    = $request->getPost('primer_apellido') ?? null;
+            $segundo_apellido   = $request->getPost('segundo_apellido') ?? null;
+            $nombre             = $request->getPost('nombre') ?? null;
+            $celular            = $request->getPost('celular') ?? null;
+            $id_locacion_registro   = $request->getPost('id_locacion_registro') ?? null;
+            $fecha_nacimiento       = $request->getPost('fecha_nacimiento') ?? null;
+           
+    
+            //  VERIFICACION DE PARAMETROS
+
+            if (empty($id)) {
+                throw new Exception('Parámetro "Identificador" vacío');
+            }
+
+            if (empty($primer_apellido)) {
+                throw new Exception('Parámetro "Primer apellido" vacío');
+            }
+
+            if (empty($nombre)) {
+                throw new Exception('Parámetro "Nombre" vacío');
+            }
+
+            if (empty($celular)) {
+                throw new Exception('Parámetro "Celular" vacío');
+            }
+
+            if (empty($id_locacion_registro)) {
+                throw new Exception('Parámetro "Locacion" vacío');
+            }
+
+            if (!FuncionesGlobales::validarTelefono($celular)){
+                throw new Exception('Parámetro "Celular" invalido');
+            }
+    
+            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
+            $phql = "SELECT * FROM ctpacientes a
+                    WHERE lower(a.primer_apellido) ILIKE :primer_apellido AND
+                          lower(a.segundo_apellido) ILIKE :segundo_apellido AND
+                          lower(a.nombre) ILIKE :nombre AND id <> :id";
+
+            $values = array(
+                'primer_apellido'   => "%".FuncionesGlobales::ToLower($primer_apellido)."%",
+                'segundo_apellido'  => "%".FuncionesGlobales::ToLower($segundo_apellido)."%",
+                'nombre'            => "%".FuncionesGlobales::ToLower($nombre)."%",
+                'id'                => $id
+            );
+    
+            $result = $db->query($phql, $values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            while ($row = $result->fetch()) {
+                throw new Exception('El paciente ya se encuentra registrado');
+            }
+    
+            // INSERTAR NUEVO USUARIO
+            $phql = "UPDATE ctpacientes SET 
+                        primer_apellido = :primer_apellido
+                        segundo_apellido = :segundo_apellido
+                        nombre = :nombre,
+                        celular = :celular,
+                        fecha_nacimiento = :fecha_nacimiento
+                    WHERE id = :id
+                        ";
+    
+            $values = [
+                'primer_apellido'   => $primer_apellido,
+                'segundo_apellido'  => $segundo_apellido,
+                'nombre'            => $nombre,
+                'celular'           => $celular,
+                'fecha_nacimiento'  => $fecha_nacimiento,
+                'id'                => $id            
+            ];
+    
+            $result = $execute->query($phql, $values);
 
             $conexion->commit();
     
