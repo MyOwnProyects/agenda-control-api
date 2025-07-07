@@ -130,10 +130,11 @@ return function (Micro $app,$di) {
                             a.fecha_nacimiento,
                             CASE 
                                 WHEN fecha_nacimiento IS NOT NULL THEN
-                                ROUND(EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento)) 
-                                        + EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento)) / 12.0, 1)
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 1, '0')
                                 ELSE NULL
                             END AS edad_actual
+
                         FROM ctpacientes a 
                         LEFT JOIN (
                             SELECT t1.id_paciente, COUNT(1) as num_servicios
@@ -341,10 +342,8 @@ return function (Micro $app,$di) {
         }
     });
 
-    $app->put('/ctpacientes/update', function () use ($app, $db, $request) {
-        $conexion = $db; 
+    $app->put('/ctpacientes/save_express', function () use ($app, $db, $request) {
         try {
-            $conexion->begin();
     
             // OBTENER DATOS JSON
             $id                 = $request->getPost('id') ?? null;
@@ -359,23 +358,23 @@ return function (Micro $app,$di) {
             //  VERIFICACION DE PARAMETROS
 
             if (empty($id)) {
-                throw new Exception('Parámetro "Identificador" vacío');
+                throw new Exception('Par&aacute;metro "Identificador" vac&iacute;o');
             }
 
             if (empty($primer_apellido)) {
-                throw new Exception('Parámetro "Primer apellido" vacío');
+                throw new Exception('Par&aacute;metro "Primer apellido" vac&iacute;o');
             }
 
             if (empty($nombre)) {
-                throw new Exception('Parámetro "Nombre" vacío');
+                throw new Exception('Par&aacute;metro "Nombre" vac&iacute;o');
             }
 
             if (empty($celular)) {
-                throw new Exception('Parámetro "Celular" vacío');
+                throw new Exception('Par&aacute;metro "Celular" vac&iacute;o');
             }
 
             if (empty($id_locacion_registro)) {
-                throw new Exception('Parámetro "Locacion" vacío');
+                throw new Exception('Par&aacute;metro "Locacion" vac&iacute;o');
             }
 
             if (!FuncionesGlobales::validarTelefono($celular)){
@@ -404,13 +403,12 @@ return function (Micro $app,$di) {
     
             // INSERTAR NUEVO USUARIO
             $phql = "UPDATE ctpacientes SET 
-                        primer_apellido = :primer_apellido
-                        segundo_apellido = :segundo_apellido
+                        primer_apellido = :primer_apellido,
+                        segundo_apellido = :segundo_apellido,
                         nombre = :nombre,
                         celular = :celular,
                         fecha_nacimiento = :fecha_nacimiento
-                    WHERE id = :id
-                        ";
+                    WHERE id = :id";
     
             $values = [
                 'primer_apellido'   => $primer_apellido,
@@ -421,9 +419,7 @@ return function (Micro $app,$di) {
                 'id'                => $id            
             ];
     
-            $result = $execute->query($phql, $values);
-
-            $conexion->commit();
+            $result = $db->execute($phql, $values);
     
             // RESPUESTA JSON
             $response = new Response();
@@ -432,7 +428,6 @@ return function (Micro $app,$di) {
             return $response;
             
         } catch (\Exception $e) {
-            $conexion->rollback();
             
             $response = new Response();
             $response->setJsonContent($e->getMessage());
@@ -1005,6 +1000,103 @@ return function (Micro $app,$di) {
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');
             return $response;
-}
+        }
+    });
+
+    $app->get('/cttranstornos_neurodesarrollo/show', function () use ($app,$db,$request) {
+        try{
+            // Ejecutar el query y obtener el resultado
+            $phql   = "SELECT * FROM cttranstornos_neurodesarrollo ORDER BY clave ASC";
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $arr_return = array();
+            while ($row = $result->fetch()) {
+                $arr_return[]   = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    $app->post('/ctpacientes/save_diagnostico', function () use ($app, $db, $request) {
+        $conexion = $db; 
+        try {
+            $conexion->begin();
+    
+            //  OBTENER PARAMETROS
+            $id_paciente        = $app->request->getPost('id_paciente') ?? null;
+            $arr_lista_agregar  = $app->request->getPost('arr_lista_agregar') ?? null;
+            $arr_lista_borrar   = $app->request->getPost('arr_lista_borrar') ?? null;
+
+            if (empty($id_paciente)){
+                throw new Exception('Par&aacute;metro Identificador vac&iacute;o');
+            }
+
+            //  SE BUSCA LA INFORMACION DEL PACIENTE
+            $phql   = "SELECT * FROM ctpacientes WHERE id = :id_paciente";
+            $result = $db->query($phql,array('id_paciente' => $id_paciente));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $flag_exists    = false;
+            while ($row = $result->fetch()) {
+                $flag_exists    = true;
+            }
+
+            if (!$flag_exists){
+                throw new Exception('Paciente inexistente en el catalogo');
+            }
+
+            //  SE BORRAN LOS REGISTROS
+            foreach($arr_lista_borrar as $id_transtorno){
+                $phql   = " DELETE FROM tbpacientes_diagnosticos 
+                            WHERE id_transtorno = :id_transtorno AND id_paciente = :id_paciente";
+
+                $result = $conexion->execute($phql,array(
+                    'id_paciente'   => $id_paciente,
+                    'id_transtorno' => $id_transtorno
+                ));
+            }
+
+            //  SE AGREGAN LOS REGISTROS
+            foreach($arr_lista_agregar as $id_transtorno){
+                $phql   = " INSERT INTO tbpacientes_diagnosticos (id_transtorno,id_paciente)
+                            VALUES (:id_transtorno,:id_paciente);";
+
+                $result = $conexion->execute($phql,array(
+                    'id_paciente'   => $id_paciente,
+                    'id_transtorno' => $id_transtorno
+                ));
+            }
+
+            $conexion->commit();
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $conexion->rollback();
+            
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
     });
 };
