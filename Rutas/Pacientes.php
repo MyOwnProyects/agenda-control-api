@@ -116,6 +116,7 @@ return function (Micro $app,$di) {
             $id_servicio        = $request->getQuery('id_servicio');
             $id_locacion_registro   = $request->getQuery('id_locacion_registro');
             $usuario_solicitud      = $request->getQuery('usuario_solicitud');
+            $get_diagnoses          = $request->getQuery('get_diagnoses') ?? null;
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -209,7 +210,24 @@ return function (Micro $app,$di) {
             $data = [];
             while ($row = $result->fetch()) {
                 $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
-                $data[]                     = $row;
+                $row['diagnosticos']    = array();
+                if (!empty($get_diagnoses)){
+                    $phql   = " SELECT b.* FROM tbpacientes_diagnosticos a
+                                LEFT JOIN cttranstornos_neurodesarrollo b ON a.id_transtorno = b.id
+                                WHERE a.id_paciente = :id_paciente ORDER BY b.clave ASC";
+                    $result_diagnosticos    = $db->query($phql,array(
+                        'id_paciente'   => $row['id']
+                    ));
+                    $result_diagnosticos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_diagnosticos){
+                        while($data_diagnostico = $result_diagnosticos->fetch()){
+                            $data['diagnosticos'][] = $data_diagnostico;
+                        }
+                    }
+                }
+                $row['diagnosticos_registrados']    = count($row['diagnosticos']) > 0 ? 'SI' : 'NO';
+                $data[]                             = $row;
             }
     
             // Devolver los datos en formato JSON
