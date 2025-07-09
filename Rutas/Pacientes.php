@@ -212,7 +212,7 @@ return function (Micro $app,$di) {
                 $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
                 $row['diagnosticos']    = array();
                 if (!empty($get_diagnoses)){
-                    $phql   = " SELECT b.* FROM tbpacientes_diagnosticos a
+                    $phql   = " SELECT a.presento_evidencia,b.* FROM tbpacientes_diagnosticos a
                                 LEFT JOIN cttranstornos_neurodesarrollo b ON a.id_transtorno = b.id
                                 WHERE a.id_paciente = :id_paciente ORDER BY b.clave ASC";
                     $result_diagnosticos    = $db->query($phql,array(
@@ -222,7 +222,7 @@ return function (Micro $app,$di) {
 
                     if ($result_diagnosticos){
                         while($data_diagnostico = $result_diagnosticos->fetch()){
-                            $data['diagnosticos'][] = $data_diagnostico;
+                            $row['diagnosticos'][]  = $data_diagnostico;
                         }
                     }
                 }
@@ -1049,15 +1049,15 @@ return function (Micro $app,$di) {
         
     });
 
-    $app->post('/ctpacientes/save_diagnostico', function () use ($app, $db, $request) {
+    $app->post('/ctpacientes/save_diagnoses', function () use ($app, $db, $request) {
         $conexion = $db; 
         try {
             $conexion->begin();
     
             //  OBTENER PARAMETROS
-            $id_paciente        = $app->request->getPost('id_paciente') ?? null;
-            $arr_lista_agregar  = $app->request->getPost('arr_lista_agregar') ?? null;
-            $arr_lista_borrar   = $app->request->getPost('arr_lista_borrar') ?? null;
+            $id_paciente    = $app->request->getPost('id_paciente') ?? null;
+            $obj_info       = $app->request->getPost('obj_info') ?? null;
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
 
             if (empty($id_paciente)){
                 throw new Exception('Par&aacute;metro Identificador vac&iacute;o');
@@ -1078,25 +1078,39 @@ return function (Micro $app,$di) {
                 throw new Exception('Paciente inexistente en el catalogo');
             }
 
-            //  SE BORRAN LOS REGISTROS
-            foreach($arr_lista_borrar as $id_transtorno){
-                $phql   = " DELETE FROM tbpacientes_diagnosticos 
-                            WHERE id_transtorno = :id_transtorno AND id_paciente = :id_paciente";
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
-                $result = $conexion->execute($phql,array(
-                    'id_paciente'   => $id_paciente,
-                    'id_transtorno' => $id_transtorno
-                ));
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
             }
 
+            if ($id_usuario_solicitud == null){
+                throw new Exception('Usuario inexistente en el catalogo');
+            }
+
+            //  SE BORRAN LOS REGISTROS
+            $phql   = " DELETE FROM tbpacientes_diagnosticos 
+                        WHERE id_paciente = :id_paciente";
+
+            $result = $conexion->execute($phql,array(
+                'id_paciente'   => $id_paciente,
+            ));
+
             //  SE AGREGAN LOS REGISTROS
-            foreach($arr_lista_agregar as $id_transtorno){
-                $phql   = " INSERT INTO tbpacientes_diagnosticos (id_transtorno,id_paciente)
-                            VALUES (:id_transtorno,:id_paciente);";
+            foreach($obj_info as $diagnostico){
+                $phql   = " INSERT INTO tbpacientes_diagnosticos (id_transtorno,id_paciente,presento_evidencia,id_usuario_registro)
+                            VALUES (:id_transtorno,:id_paciente,:presento_evidencia,:id_usuario_registro);";
 
                 $result = $conexion->execute($phql,array(
                     'id_paciente'   => $id_paciente,
-                    'id_transtorno' => $id_transtorno
+                    'id_transtorno' => $diagnostico['id_transtorno'],
+                    'presento_evidencia'    => $diagnostico['presento_evidencia'],
+                    'id_usuario_registro'   => $id_usuario_solicitud
                 ));
             }
 
