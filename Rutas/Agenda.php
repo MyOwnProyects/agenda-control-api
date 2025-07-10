@@ -410,22 +410,21 @@ return function (Micro $app,$di) {
             if (empty($id_agenda_cita)) {
                 throw new Exception('Parámetro "ID" vacío');
             }
-
-            if (!is_numeric($estatus_asistencia_actual)) {
-                throw new Exception('Parámetro "Estatus actual" vacío');
-            }
     
             if (!is_numeric($nuevo_estatus_asistencia)) {
                 throw new Exception('Parámetro "Nuevo estatus" vacío');
             }
             
             // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
-            $phql = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita AND (asistencia <> :estatus_asistencia_actual OR fecha_cita < now()::DATE";
+            $phql = "SELECT * FROM tbagenda_citas 
+                    WHERE id = :id_agenda_cita AND asistencia IS NOT NULL AND (asistencia <> :estatus_asistencia_actual OR fecha_cita < now()::DATE)";
     
-            $result = $db->query($phql, array(
+            $values = array(
                 'id_agenda_cita'    => $id_agenda_cita,
-                'estatus_asistencia_actual' => $estatus_asistencia_actual
-            ));
+                'estatus_asistencia_actual' => $estatus_asistencia_actual === '' ? -1 : (int) $estatus_asistencia_actual
+            );
+
+            $result = $db->query($phql, $values);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
     
             while ($row = $result->fetch()) {
@@ -836,6 +835,85 @@ return function (Micro $app,$di) {
 
         }catch (\Exception $e) { 
             $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->put('/tbagenda_citas/save_pago', function () use ($app, $db, $request) {
+        try {
+    
+            // OBTENER DATOS JSON
+            $id_agenda_cita = $request->getPost('id_agenda_cita');
+            $estatus_actual = $request->getPost('estatus_actual');
+            $nuevo_estatus  = $request->getPost('estatus_actual');
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            
+            // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
+            if (empty($id_agenda_cita)) {
+                throw new Exception('Parámetro "ID" vacío');
+            }
+    
+            if (!is_numeric($nuevo_estatus_asistencia)) {
+                throw new Exception('Parámetro "Nuevo estatus" vacío');
+            }
+            
+            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
+            $phql = "SELECT * FROM tbagenda_citas 
+                    WHERE id = :id_agenda_cita AND pagada <> :estatus_actual";
+    
+            $values = array(
+                'id_agenda_cita'    => $id_agenda_cita,
+                'estatus_actual'    => $estatus_actual
+            );
+
+            $result = $db->query($phql, $values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            while ($row = $result->fetch()) {
+                throw new Exception('El estatus de la asistencia ha sido modificado previamente o la cita ya no se encuentra disponible para realizar las modificaciones solicitadas, te sugerimos refrescar la vista.');
+            }
+
+            //  SE BUSCA EL ID DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
+            }
+
+            if ($id_usuario_solicitud == null){
+                throw new Exception('Usuario inexistente en el catalogo');
+            }
+    
+            // INSERTAR NUEVO servicio
+            $phql = "UPDATE tbagenda_citas SET
+                            pagada = :nuevo_estatus,
+                            fecha_pago = NOW(),
+                            id_usuario_pago = :id_usuario_solicitud
+                    WHERE id = :id_agenda_cita ";
+    
+            $values = [
+                'id_agenda_cita'    => $id_agenda_cita,
+                'nuevo_estatus'     => $nuevo_estatus,
+                'id_usuario_solicitud'  => $id_usuario_solicitud
+            ];
+    
+            $result = $db->execute($phql, $values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) { 
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');
