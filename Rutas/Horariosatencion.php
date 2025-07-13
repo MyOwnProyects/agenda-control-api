@@ -62,8 +62,8 @@ return function (Micro $app,$di) {
 
                 //  SE CREA EL REGISTRO EN CASO DE QUE ESTE NO EXISTA
                 if ($id_horario_atencion == null){
-                    $phql   = "INSERT INTO tbhorarios_atencion (id_locacion,id_profesional,hora_inicio,hora_termino,titulo,intervalo_citas)
-                                VALUES (:id_locacion,:id_profesional,:hora_inicio,:hora_termino,:titulo,:intervalo_citas) RETURNING *";
+                    $phql   = "INSERT INTO tbhorarios_atencion (id_locacion,id_profesional,hora_inicio,hora_termino,titulo)
+                                VALUES (:id_locacion,:id_profesional,:hora_inicio,:hora_termino,:titulo) RETURNING *";
 
                     if (!empty($id_profesional)){
                         $values['id_profesional']   = $id_profesional;
@@ -72,7 +72,6 @@ return function (Micro $app,$di) {
                     }
                     
                     $values['titulo']           = $horario_atencion['titulo'];
-                    $values['intervalo_citas']  = $horario_atencion['intervalo_citas'];
 
                     $result_create  = $conexion->query($phql,$values);
                     $result_create->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
@@ -115,6 +114,7 @@ return function (Micro $app,$di) {
     $app->get('/tbhorarios_atencion/get_opening_hours', function () use ($app, $db, $request) {
         try {
     
+            $id             = $request->getQuery('id') ?? null;
             $id_locacion    = $request->getQuery('id_locacion');
             $id_profesional = $request->getQuery('id_profesional') ?? null;
             $arr_return     = array();
@@ -125,9 +125,8 @@ return function (Micro $app,$di) {
                             id_profesional ,
                             TO_CHAR(hora_inicio, 'HH24:MI') AS hora_inicio,
                             TO_CHAR(hora_termino, 'HH24:MI') AS hora_termino,
-                            titulo,
-                            intervalo_citas
-                        FROM tbhorarios_atencion 
+                            titulo
+                        FROM tbhorarios_atencion a
                         WHERE id_locacion = :id_locacion ";
 
             $values = array(
@@ -135,13 +134,29 @@ return function (Micro $app,$di) {
             );
 
             if (!empty($id_profesional)){
-                $phql   .= " AND id_profesional = :id_profesional ";
+                $phql   .= " AND a.id_profesional = :id_profesional ";
                 $values['id_profesional']   = $id_profesional;
+
+                if (!empty($id)){
+                    $phql   = " AND EXISTS (
+                                    SELECT 1 FROM tbhorarios_atencion t1
+                                    WHERE t1.hora_inicio BETWEEN a.hora_inicio AND a.hora_termino
+                                    AND t1.hora_termino BETWEEN a.hora_inicio AND a.hora_termino
+                                );";
+                }
+
             } else {
-                $phql   .= " AND id_profesional IS NULL ";
+                $phql   .= " AND a.id_profesional IS NULL ";
+
+                if (!empty($id)){
+                    $phql   .= " AND a.id = :id ";
+                    $values['id']   = $id;
+                }
             }
 
-            $phql   .= ' ORDER BY hora_inicio ASC,hora_termino ASC';
+            
+
+            $phql   .= ' ORDER BY a.id ASC';
 
             $result = $db->query($phql,$values);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);

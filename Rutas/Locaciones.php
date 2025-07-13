@@ -173,6 +173,7 @@ return function (Micro $app,$di) {
             $direccion  = $request->getPost('direccion') ?? null;
             $telefono   = $request->getPost('telefono') ?? null;
             $celular    = $request->getPost('celular') ?? null;
+            $intervalo_citas    = $request->getPost('intervalo_citas') ?? null;
             $lista_servicios    = $request->getPost('lista_servicios') ?? null;
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
@@ -200,14 +201,16 @@ return function (Micro $app,$di) {
                                     nombre,
                                     direccion,
                                     telefono,
-                                    celular
+                                    celular,
+                                    intervalo_citas
                                 ) 
                      VALUES (
                                 :clave, 
                                 :nombre, 
                                 :direccion,
                                 :telefono,
-                                :celular
+                                :celular,
+                                :intervalo_citas
                             ) RETURNING id";
     
             $values = [
@@ -215,7 +218,8 @@ return function (Micro $app,$di) {
                 'nombre'    => $nombre,
                 'direccion' => $direccion,
                 'telefono'  => $telefono,
-                'celular'   => $celular
+                'celular'   => $celular,
+                'intervalo_citas'   => $intervalo_citas
             ];
     
             $result = $conexion->query($phql, $values);
@@ -297,6 +301,7 @@ return function (Micro $app,$di) {
             $direccion  = $request->getPost('direccion') ?? null;
             $telefono   = $request->getPost('telefono') ?? null;
             $celular    = $request->getPost('celular') ?? null;
+            $intervalo_citas    = $request->getPost('intervalo_citas') ?? null;
             $lista_servicios    = $request->getPost('lista_servicios') ?? null;
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
@@ -329,7 +334,8 @@ return function (Micro $app,$di) {
                                     nombre = :nombre,
                                     direccion = :direccion,
                                     telefono = :telefono,
-                                    celular = :celular
+                                    celular = :celular,
+                                    intervalo_citas = :intervalo_citas
                             WHERE id = :id ";
     
             $values = [
@@ -338,7 +344,8 @@ return function (Micro $app,$di) {
                 'nombre'    => $nombre,
                 'direccion' => $direccion,
                 'telefono'  => $telefono,
-                'celular'   => $celular
+                'celular'   => $celular,
+                'intervalo_citas'   => $intervalo_citas
             ];
     
             $result = $conexion->execute($phql, $values);
