@@ -747,7 +747,8 @@ return function (Micro $app,$di) {
                             TO_CHAR(c.hora_inicio, 'HH24:MI') AS hora_inicio,
                             TO_CHAR(c.hora_termino, 'HH24:MI') AS hora_termino,
                             TRUNC(f.duracion / 60, 0) AS duracion,
-                            g.nombre as nombre_locacion
+                            g.nombre as nombre_locacion,
+                            e.codigo_color
                         FROM tbcitas_programadas a 
                         LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
                         LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
@@ -780,6 +781,7 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $row    = [];
             while ($data = $result->fetch()) {
+                $row[$data['id_cita_programada_servicio']]['codigo_color']      = $data['codigo_color'];
                 $row[$data['id_cita_programada_servicio']]['id_servicio']       = $data['id_servicio'];
                 $row[$data['id_cita_programada_servicio']]['duracion']          = $data['duracion'];
                 $row[$data['id_cita_programada_servicio']]['id_profesional']    = $data['id_profesional'];
