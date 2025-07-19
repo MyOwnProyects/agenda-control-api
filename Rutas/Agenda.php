@@ -229,10 +229,12 @@ return function (Micro $app,$di) {
                     $phql   = " SELECT 
                                     a.*,
                                     b.clave,
-                                    b.nombre as nombre_servicio
+                                    b.nombre as nombre_servicio,
+                                    b.codigo_color
                                 FROM tbagenda_citas_servicios a 
                                 LEFT JOIN ctservicios b ON a.id_servicio = b.id
-                                WHERE a.id_agenda_cita = :id_agenda_cita";
+                                WHERE a.id_agenda_cita = :id_agenda_cita 
+                                ORDER BY b.costo DESC";
                     $result_servicios = $db->query($phql,array('id_agenda_cita' => $row['id_agenda_cita']));
                     $result_servicios->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
@@ -243,6 +245,8 @@ return function (Micro $app,$di) {
                         }
                     }
                 }
+
+                $row['codigo_color']    = $row['servicios'][0]['codigo_color'];
 
                 if ($from_catalog){
                     $row['hora_cita']  = $row['start'] . ' - ' . $row['end'];
