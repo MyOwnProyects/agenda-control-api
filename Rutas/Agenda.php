@@ -111,6 +111,8 @@ return function (Micro $app,$di) {
             $citas_pagadas      = $request->getQuery('citas_pagadas') ?? null;
             $citas_adeudo       = $request->getQuery('citas_adeudo') ?? null;
 
+            $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+
             // Definir el query SQL
             $phql   = " SELECT  
                             a.id as id_agenda_cita,
@@ -223,8 +225,9 @@ return function (Micro $app,$di) {
             while ($row = $result->fetch()) {
                 $row['servicios']   = array();
                 $row['estatus']     = $row['activa'] == 1 ? 'ACTIVA' : 'CANCELADA';
-                $row['fecha_completa']  = $row['fecha_cita'] . ' de '. $row['start']. ' a '.$row['end'];
+                $row['fecha_completa']  = $dias_semana[$row['day'] - 1].' '.FuncionesGlobales::formatearFecha($row['fecha_cita']) . ' de '. $row['start']. ' a '.$row['end'];
                 $row['label_pagada']    = $row['pagada'] == 1 ? 'SI' : 'NO';
+                $row['label_dia']       = $dias_semana[$row['day'] - 1];
                 if (!empty($get_servicios)){
                     $phql   = " SELECT 
                                     a.*,
