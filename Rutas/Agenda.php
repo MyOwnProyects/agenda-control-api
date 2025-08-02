@@ -145,7 +145,13 @@ return function (Micro $app,$di) {
                             a.id_locacion,
                             a.pagada,
                             a.fecha_pago,
-                            a.forma_pago
+                            a.forma_pago,
+                            CASE 
+                                WHEN b.fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text, 1, '0')
+                                ELSE NULL
+                            END AS edad_actual
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
@@ -261,6 +267,7 @@ return function (Micro $app,$di) {
                     }
                     
                 }
+                $row['nombre_completo'] = $row['nombre_completo'].' ('.$row['edad_actual'].')';
                 $data[] = $row;
             }
     

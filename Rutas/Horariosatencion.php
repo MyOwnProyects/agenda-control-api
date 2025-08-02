@@ -120,13 +120,15 @@ return function (Micro $app,$di) {
             $arr_return     = array();
 
             $phql   = "SELECT 
-                            id,
-                            id_locacion,
-                            id_profesional ,
-                            TO_CHAR(hora_inicio, 'HH24:MI') AS hora_inicio,
-                            TO_CHAR(hora_termino, 'HH24:MI') AS hora_termino,
-                            titulo
+                            a.id,
+                            a.id_locacion,
+                            a.id_profesional ,
+                            TO_CHAR(a.hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(a.hora_termino, 'HH24:MI') AS hora_termino,
+                            a.titulo,
+                            b.intervalo_citas
                         FROM tbhorarios_atencion a
+                        LEFT JOIN ctlocaciones b ON a.id_locacion = b.id
                         WHERE id_locacion = :id_locacion ";
 
             $values = array(
