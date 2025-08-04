@@ -911,17 +911,28 @@ return function (Micro $app,$di) {
     $app->get('/tbagenda_citas/get_today', function () use ($app,$db,$request) {
         try{
             $today  = '';
-            $phql   = "SELECT current_date as today";
+            $dia_limite_movimientos = '';
+            $phql   = "SELECT 
+                            current_date AS today,
+                            current_date - CAST(valor AS INTEGER) AS dia_limite_movimientos
+                        FROM 
+                            ctvariables_sistema
+                        WHERE 
+                            clave = 'dias_movimientos_citas_vencidas';";
 
             $result = $db->query($phql);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
             if ($result){
                 while($data = $result->fetch()){
                     $today  = $data['today'];
+                    $dia_limite_movimientos = $data['dia_limite_movimientos'];
                 }
             }
 
-            return json_encode(array('today' => $today));
+            return json_encode(array(
+                'today' => $today,
+                'dia_limite_movimientos' => $dia_limite_movimientos
+            ));
 
         }catch (\Exception $e) { 
             $conexion->rollback();
