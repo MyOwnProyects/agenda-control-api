@@ -267,6 +267,7 @@ return function (Micro $app,$di) {
                     }
                     
                 }
+                $row['edad_actual'] = empty($row['edad_actual']) ? 'S/E' : $row['edad_actual'];
                 $row['nombre_completo'] = $row['nombre_completo'].' ('.$row['edad_actual'].')';
                 $data[] = $row;
             }
