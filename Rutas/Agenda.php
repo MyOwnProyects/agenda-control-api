@@ -400,7 +400,10 @@ return function (Micro $app,$di) {
             }
 
             //  SE VERIFICA QUE LA CITA SE ENCUENTRE ACTIVA
-            $phql   = "SELECT *  FROM tbagenda_citas WHERE id = :id_agenda_cita AND (activa = 1 OR fecha_cita < now()::DATE )";
+            $phql   = "SELECT a.*,(CASE WHEN (a.fecha_cita + (h.valor)::integer * INTERVAL '1 day') < NOW()::DATE THEN 1 ELSE 0 END) as vencida  
+                        FROM tbagenda_citas a
+                        LEFT JOIN ctvariables_sistema h ON h.clave = 'dias_movimientos_citas_vencidas'
+                        WHERE a.id = :id_agenda_cita AND (activa = 1 OR fecha_cita < now()::DATE )";
             
             $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
@@ -409,6 +412,10 @@ return function (Micro $app,$di) {
             if ($result){
                 while($data = $result->fetch()){
                     $flag_activa    = true;
+
+                    if ($data['vencida'] == 1){
+                        throw new Exception('La cita ya no se encuentra disponible para realizar la solicitud indicada');
+                    }
                 }
             }
 
