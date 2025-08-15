@@ -24,10 +24,6 @@ return function (Micro $app,$di) {
             $tipo_busqueda   = $request->getQuery('tipo_busqueda') ?? null;
             $citas_pagadas   = $request->getQuery('citas_pagadas') ?? null;
             $citas_adeudo       = $request->getQuery('citas_adeudo') ?? null;
-            
-            if ($from_catalog && (empty($fecha_inicio) || empty($fecha_termino))){
-                throw new Exception('Rango de fechas vacio');
-            }
         
             // Definir el query SQL
             $phql   = "SELECT 
@@ -36,10 +32,22 @@ return function (Micro $app,$di) {
                         WHERE 1 = 1 ";
             $values = array();
 
-            if ($from_catalog){
-                $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
-                $values['fecha_inicio']     = $fecha_inicio;
-                $values['fecha_termino']    = $fecha_termino;
+            if ($from_catalog && (!empty($fecha_inicio) || !empty($fecha_termino))){
+                if (!empty($fecha_inicio) && !empty($fecha_termino)){
+                    $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
+                    $values['fecha_inicio']     = $fecha_inicio;
+                    $values['fecha_termino']    = $fecha_termino;
+                } else {
+                    if (!empty($fecha_inicio)){
+                        $phql   .= " AND a.fecha_cita >= :fecha_inicio ";
+                        $values['fecha_inicio']     = $fecha_inicio;
+                    }
+
+                    if (!empty($fecha_termino)){
+                        $phql   .= " AND a.fecha_cita <= :fecha_termino ";
+                        $values['fecha_termino']    = $fecha_termino;
+                    }
+                }
             }
 
             if (is_numeric($id_profesional)){
@@ -179,10 +187,22 @@ return function (Micro $app,$di) {
                 $values['fecha_termino']    = $rango_fechas['fecha_termino'];
             }
 
-            if ($from_catalog){
-                $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
-                $values['fecha_inicio']     = $fecha_inicio;
-                $values['fecha_termino']    = $fecha_termino;
+            if ($from_catalog && (!empty($fecha_inicio) || !empty($fecha_termino))){
+                if (!empty($fecha_inicio) && !empty($fecha_termino)){
+                    $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
+                    $values['fecha_inicio']     = $fecha_inicio;
+                    $values['fecha_termino']    = $fecha_termino;
+                } else {
+                    if (!empty($fecha_inicio)){
+                        $phql   .= " AND a.fecha_cita >= :fecha_inicio ";
+                        $values['fecha_inicio']     = $fecha_inicio;
+                    }
+
+                    if (!empty($fecha_termino)){
+                        $phql   .= " AND a.fecha_cita <= :fecha_termino ";
+                        $values['fecha_termino']    = $fecha_termino;
+                    }
+                }
             }
 
             if (is_numeric($activa)){
