@@ -783,7 +783,7 @@ return function (Micro $app,$di) {
                 while ($data = $result->fetch()) {
                     $flag_exist = true;
                     if ($data['fecha_permitida'] != 1 ){
-                        throw new Exception('La fecha ingresada es menor al dia de hoy: '.$data['hoy']);
+                        throw new Exception('No esta permitedo agendar o regendar citas menores al d&iacute;a de hoy: '.$data['hoy']);
                     }
 
                     if ($data['fecha_limite_apertura'] != 1 ){
