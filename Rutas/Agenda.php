@@ -22,10 +22,8 @@ return function (Micro $app,$di) {
             $fecha_termino  = $request->getQuery('fecha_termino') ?? null;
             $from_catalog   = $request->getQuery('from_catalog') ?? null;
             $tipo_busqueda   = $request->getQuery('tipo_busqueda') ?? null;
-            
-            if ($from_catalog && (empty($fecha_inicio) || empty($fecha_termino))){
-                throw new Exception('Rango de fechas vacio');
-            }
+            $citas_pagadas   = $request->getQuery('citas_pagadas') ?? null;
+            $citas_adeudo       = $request->getQuery('citas_adeudo') ?? null;
         
             // Definir el query SQL
             $phql   = "SELECT 
@@ -34,10 +32,22 @@ return function (Micro $app,$di) {
                         WHERE 1 = 1 ";
             $values = array();
 
-            if ($from_catalog){
-                $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
-                $values['fecha_inicio']     = $fecha_inicio;
-                $values['fecha_termino']    = $fecha_termino;
+            if ($from_catalog && (!empty($fecha_inicio) || !empty($fecha_termino))){
+                if (!empty($fecha_inicio) && !empty($fecha_termino)){
+                    $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
+                    $values['fecha_inicio']     = $fecha_inicio;
+                    $values['fecha_termino']    = $fecha_termino;
+                } else {
+                    if (!empty($fecha_inicio)){
+                        $phql   .= " AND a.fecha_cita >= :fecha_inicio ";
+                        $values['fecha_inicio']     = $fecha_inicio;
+                    }
+
+                    if (!empty($fecha_termino)){
+                        $phql   .= " AND a.fecha_cita <= :fecha_termino ";
+                        $values['fecha_termino']    = $fecha_termino;
+                    }
+                }
             }
 
             if (is_numeric($id_profesional)){
@@ -56,6 +66,14 @@ return function (Micro $app,$di) {
                 } elseif ($tipo_busqueda == 'canceladas'){
                     $phql   .= " AND a.activa = 0 ";
                 }
+            }
+
+            if (!empty($citas_pagadas)){
+                $phql           .= " AND a.pagada = 1 ";
+            }
+
+            if (!empty($citas_adeudo)){
+                $phql           .= " AND a.pagada = 0 ";
             }
 
             // Ejecutar el query y obtener el resultado
@@ -98,6 +116,10 @@ return function (Micro $app,$di) {
             $fecha_termino      = $request->getQuery('fecha_termino') ?? null;
             $from_catalog       = $request->getQuery('from_catalog') ?? null;
             $tipo_busqueda      = $request->getQuery('tipo_busqueda') ?? null;
+            $citas_pagadas      = $request->getQuery('citas_pagadas') ?? null;
+            $citas_adeudo       = $request->getQuery('citas_adeudo') ?? null;
+
+            $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
             // Definir el query SQL
             $phql   = " SELECT  
@@ -127,8 +149,17 @@ return function (Micro $app,$di) {
                             (f.primer_apellido|| ' ' ||COALESCE(f.segundo_apellido,'')||' '||f.nombre) as usuario_cancelacion,
                             (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as usuario_captura,
                             a.observaciones_cancelacion,
-                            (CASE WHEN a.fecha_cita < NOW()::DATE THEN 1 ELSE 0 END) as vencida,
-                            a.id_locacion
+                            (CASE WHEN (a.fecha_cita + (h.valor)::integer * INTERVAL '1 day') < NOW()::DATE THEN 1 ELSE 0 END) as vencida,
+                            a.id_locacion,
+                            a.pagada,
+                            a.fecha_pago,
+                            a.forma_pago,
+                            CASE 
+                                WHEN b.fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text, 1, '0')
+                                ELSE NULL
+                            END AS edad_actual
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
@@ -136,6 +167,7 @@ return function (Micro $app,$di) {
                         LEFT JOIN ctmotivos_cancelacion_cita e ON a.id_motivo_cancelacion = e.id
                         LEFT JOIN ctusuarios f ON a.id_usuario_cancelacion = f.id
                         LEFT JOIN ctusuarios g ON a.id_usuario_agenda = g.id
+                        LEFT JOIN ctvariables_sistema h ON h.clave = 'dias_movimientos_citas_vencidas'
                         WHERE 1 = 1 ";
             $values = array();
     
@@ -155,10 +187,22 @@ return function (Micro $app,$di) {
                 $values['fecha_termino']    = $rango_fechas['fecha_termino'];
             }
 
-            if ($from_catalog){
-                $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
-                $values['fecha_inicio']     = $fecha_inicio;
-                $values['fecha_termino']    = $fecha_termino;
+            if ($from_catalog && (!empty($fecha_inicio) || !empty($fecha_termino))){
+                if (!empty($fecha_inicio) && !empty($fecha_termino)){
+                    $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
+                    $values['fecha_inicio']     = $fecha_inicio;
+                    $values['fecha_termino']    = $fecha_termino;
+                } else {
+                    if (!empty($fecha_inicio)){
+                        $phql   .= " AND a.fecha_cita >= :fecha_inicio ";
+                        $values['fecha_inicio']     = $fecha_inicio;
+                    }
+
+                    if (!empty($fecha_termino)){
+                        $phql   .= " AND a.fecha_cita <= :fecha_termino ";
+                        $values['fecha_termino']    = $fecha_termino;
+                    }
+                }
             }
 
             if (is_numeric($activa)){
@@ -184,6 +228,14 @@ return function (Micro $app,$di) {
                 }
             }
 
+            if (!empty($citas_pagadas)){
+                $phql           .= " AND a.pagada = 1 ";
+            }
+
+            if (!empty($citas_adeudo)){
+                $phql           .= " AND a.pagada = 0 ";
+            }
+
             $phql   .= ' ORDER BY a.fecha_cita,a.hora_inicio,a.hora_termino ';
 
             if ($request->hasQuery('offset')){
@@ -199,13 +251,19 @@ return function (Micro $app,$di) {
             while ($row = $result->fetch()) {
                 $row['servicios']   = array();
                 $row['estatus']     = $row['activa'] == 1 ? 'ACTIVA' : 'CANCELADA';
+                $row['fecha_completa']  = $dias_semana[$row['day'] - 1].' '.FuncionesGlobales::formatearFecha($row['fecha_cita']) . ' de '. $row['start']. ' a '.$row['end'];
+                $row['label_pagada']    = $row['pagada'] == 1 ? 'SI' : 'NO';
+                $row['label_dia']       = $dias_semana[$row['day'] - 1];
                 if (!empty($get_servicios)){
                     $phql   = " SELECT 
                                     a.*,
-                                    b.nombre as nombre_servicio
+                                    b.clave,
+                                    b.nombre as nombre_servicio,
+                                    b.codigo_color
                                 FROM tbagenda_citas_servicios a 
                                 LEFT JOIN ctservicios b ON a.id_servicio = b.id
-                                WHERE a.id_agenda_cita = :id_agenda_cita";
+                                WHERE a.id_agenda_cita = :id_agenda_cita 
+                                ORDER BY b.costo DESC";
                     $result_servicios = $db->query($phql,array('id_agenda_cita' => $row['id_agenda_cita']));
                     $result_servicios->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
@@ -217,10 +275,20 @@ return function (Micro $app,$di) {
                     }
                 }
 
+                $row['codigo_color']    = $row['servicios'][0]['codigo_color'];
+
                 if ($from_catalog){
                     $row['hora_cita']  = $row['start'] . ' - ' . $row['end'];
                     $row['num_servicios'] = count($row['servicios']);
+                    if (count($row['servicios']) == 1){
+                        $row['num_servicios_costo'] = $row['servicios'][0]['clave'].' / $'.$row['total'];
+                    } else {
+                        $row['num_servicios_costo'] = count($row['servicios']).' / $'.$row['total'];
+                    }
+                    
                 }
+                $row['edad_actual'] = empty($row['edad_actual']) ? 'S/E' : $row['edad_actual'];
+                $row['nombre_completo'] = $row['nombre_completo'].' ('.$row['edad_actual'].')';
                 $data[] = $row;
             }
     
@@ -352,7 +420,10 @@ return function (Micro $app,$di) {
             }
 
             //  SE VERIFICA QUE LA CITA SE ENCUENTRE ACTIVA
-            $phql   = "SELECT *  FROM tbagenda_citas WHERE id = :id_agenda_cita AND (activa = 1 OR fecha_cita < now()::DATE )";
+            $phql   = "SELECT a.*,(CASE WHEN (a.fecha_cita + (h.valor)::integer * INTERVAL '1 day') < NOW()::DATE THEN 1 ELSE 0 END) as vencida  
+                        FROM tbagenda_citas a
+                        LEFT JOIN ctvariables_sistema h ON h.clave = 'dias_movimientos_citas_vencidas'
+                        WHERE a.id = :id_agenda_cita AND (activa = 1 OR fecha_cita < now()::DATE )";
             
             $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
@@ -361,6 +432,10 @@ return function (Micro $app,$di) {
             if ($result){
                 while($data = $result->fetch()){
                     $flag_activa    = true;
+
+                    if ($data['vencida'] == 1){
+                        throw new Exception('La cita ya no se encuentra disponible para realizar la solicitud indicada');
+                    }
                 }
             }
 
@@ -410,22 +485,21 @@ return function (Micro $app,$di) {
             if (empty($id_agenda_cita)) {
                 throw new Exception('Parámetro "ID" vacío');
             }
-
-            if (!is_numeric($estatus_asistencia_actual)) {
-                throw new Exception('Parámetro "Estatus actual" vacío');
-            }
     
             if (!is_numeric($nuevo_estatus_asistencia)) {
                 throw new Exception('Parámetro "Nuevo estatus" vacío');
             }
             
             // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
-            $phql = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita AND (asistencia <> :estatus_asistencia_actual OR fecha_cita < now()::DATE";
+            $phql = "SELECT * FROM tbagenda_citas 
+                    WHERE id = :id_agenda_cita AND asistencia IS NOT NULL AND (asistencia <> :estatus_asistencia_actual OR fecha_cita < now()::DATE)";
     
-            $result = $db->query($phql, array(
+            $values = array(
                 'id_agenda_cita'    => $id_agenda_cita,
-                'estatus_asistencia_actual' => $estatus_asistencia_actual
-            ));
+                'estatus_asistencia_actual' => $estatus_asistencia_actual === '' ? -1 : (int) $estatus_asistencia_actual
+            );
+
+            $result = $db->query($phql, $values);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
     
             while ($row = $result->fetch()) {
@@ -479,6 +553,11 @@ return function (Micro $app,$di) {
             $id_agenda_cita_anterior    = $request->getPost('id_agenda_cita');
             $accion                     = $request->getPost('accion');
             $id_cita_programada         = null;
+            $pagada                     = 0;
+            $fecha_pago                 = null;
+            $id_usuario_pago            = null;
+            $forma_pago                 = null;
+            
 
             //  SE VERIFICAN LOS CAMPOS OBLIGATORIOS
             if (empty($id_profesional) || !is_numeric($id_profesional)){
@@ -541,6 +620,10 @@ return function (Micro $app,$di) {
                         $flag_exist = true;
                         $id_paciente        = $data['id_paciente'];
                         $id_cita_programada = $data['id_cita_programada'];
+                        $pagada             = $data['pagada'];
+                        $fecha_pago         = $data['fecha_pago'];
+                        $id_usuario_pago    = $data['id_usuario_pago'];
+                        $forma_pago         = $data['forma_pago'];
 
                         //  SI VIENE EL CHECK DE CAMBIO DE DIA SE MARCA COMO REAGENDADO
                         $clave_cancelacion  = $accion == 'reagendar_cita' ? 'REA' : 'HOS';
@@ -700,7 +783,7 @@ return function (Micro $app,$di) {
                 while ($data = $result->fetch()) {
                     $flag_exist = true;
                     if ($data['fecha_permitida'] != 1 ){
-                        throw new Exception('La fecha ingresada es menor al dia de hoy: '.$data['hoy']);
+                        throw new Exception('No esta permitedo agendar o regendar citas menores al d&iacute;a de hoy: '.$data['hoy']);
                     }
 
                     if ($data['fecha_limite_apertura'] != 1 ){
@@ -752,8 +835,38 @@ return function (Micro $app,$di) {
             }
 
             //  SE CREA EL REGISTRO DE LA CITA
-            $phql   = "INSERT INTO tbagenda_citas (id_locacion,id_paciente,fecha_cita,dia,hora_inicio,hora_termino,id_profesional,id_usuario_agenda,total,id_cita_reagendada,id_cita_programada) 
-                        VALUES(:id_locacion,:id_paciente,:fecha_cita,:dia,:hora_inicio,:hora_termino,:id_profesional,:id_usuario_agenda,0,:id_cita_reagendada,:id_cita_programada) RETURNING *;";
+            $phql   = "INSERT INTO tbagenda_citas (
+                                        id_locacion,
+                                        id_paciente,
+                                        fecha_cita,
+                                        dia,
+                                        hora_inicio,
+                                        hora_termino,
+                                        id_profesional,
+                                        id_usuario_agenda,
+                                        total,
+                                        id_cita_reagendada,
+                                        id_cita_programada,
+                                        pagada,
+                                        fecha_pago,
+                                        id_usuario_pago,
+                                        forma_pago) 
+                        VALUES( :id_locacion,
+                                :id_paciente,
+                                :fecha_cita,
+                                :dia,
+                                :hora_inicio,
+                                :hora_termino,
+                                :id_profesional,
+                                :id_usuario_agenda,
+                                0,
+                                :id_cita_reagendada,
+                                :id_cita_programada,
+                                :pagada,
+                                :fecha_pago,
+                                :id_usuario_pago,
+                                :forma_pago
+                                ) RETURNING *;";
 
             $values = array(
                 'id_locacion'       => $id_locacion,
@@ -765,7 +878,11 @@ return function (Micro $app,$di) {
                 'id_profesional'    => $id_profesional,
                 'id_usuario_agenda' => $id_usuario_solicitud,
                 'id_cita_reagendada'    => is_numeric($id_agenda_cita_anterior) ? $id_agenda_cita_anterior : null, 
-                'id_cita_programada'    => $id_cita_programada
+                'id_cita_programada'    => $id_cita_programada,
+                'pagada'                => $pagada,
+                'fecha_pago'            => $fecha_pago,
+                'id_usuario_pago'       => $id_usuario_pago,
+                'forma_pago'            => $forma_pago,
             );
 
             $result = $conexion->query($phql, $values);
@@ -822,20 +939,180 @@ return function (Micro $app,$di) {
     $app->get('/tbagenda_citas/get_today', function () use ($app,$db,$request) {
         try{
             $today  = '';
-            $phql   = "SELECT current_date as today";
+            $dia_limite_movimientos = '';
+            $phql   = "SELECT 
+                            current_date AS today,
+                            current_date - CAST(valor AS INTEGER) AS dia_limite_movimientos
+                        FROM 
+                            ctvariables_sistema
+                        WHERE 
+                            clave = 'dias_movimientos_citas_vencidas';";
 
             $result = $db->query($phql);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
             if ($result){
                 while($data = $result->fetch()){
                     $today  = $data['today'];
+                    $dia_limite_movimientos = $data['dia_limite_movimientos'];
                 }
             }
 
-            return json_encode(array('today' => $today));
+            return json_encode(array(
+                'today' => $today,
+                'dia_limite_movimientos' => $dia_limite_movimientos
+            ));
 
         }catch (\Exception $e) { 
             $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->put('/tbagenda_citas/capturar_pago', function () use ($app, $db, $request) {
+        try {
+    
+            // OBTENER DATOS JSON
+            $id_agenda_cita = $request->getPost('id_agenda_cita');
+            $forma_pago     = $request->getPost('forma_pago');
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            
+            // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
+            if (empty($id_agenda_cita)) {
+                throw new Exception('Parámetro "ID" vacío');
+            }
+
+            if (empty($forma_pago)){
+                 throw new Exception('Parámetro "Forma de pago" vacío');
+            }
+            
+            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
+            $phql = "SELECT * FROM tbagenda_citas 
+                    WHERE id = :id_agenda_cita AND pagada = 1";
+    
+            $values = array(
+                'id_agenda_cita'    => $id_agenda_cita
+            );
+
+            $result = $db->query($phql, $values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            while ($row = $result->fetch()) {
+                throw new Exception('El estatus del pago ha sido modificado previamente, te sugerimos refrescar la vista.');
+            }
+
+            //  SE BUSCA EL ID DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
+            }
+
+            if ($id_usuario_solicitud == null){
+                throw new Exception('Usuario inexistente en el catalogo');
+            }
+    
+            // INSERTAR NUEVO servicio
+            $phql = "UPDATE tbagenda_citas SET
+                            pagada = 1,
+                            fecha_pago = NOW(),
+                            id_usuario_pago = :id_usuario_solicitud,
+                            forma_pago = :forma_pago
+                    WHERE id = :id_agenda_cita ";
+    
+            $values = [
+                'id_agenda_cita'        => $id_agenda_cita,
+                'id_usuario_solicitud'  => $id_usuario_solicitud,
+                'forma_pago'            => $forma_pago
+            ];
+    
+            $result = $db->execute($phql, $values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) { 
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->put('/tbagenda_citas/cancelar_pago', function () use ($app, $db, $request) {
+        try {
+    
+            // OBTENER DATOS JSON
+            $id_agenda_cita     = $request->getPost('id_agenda_cita');
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            
+            // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
+            if (empty($id_agenda_cita)) {
+                throw new Exception('Parámetro "ID" vacío');
+            }
+            
+            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
+            $phql = "SELECT * FROM tbagenda_citas 
+                    WHERE id = :id_agenda_cita AND pagada = 0";
+    
+            $values = array(
+                'id_agenda_cita'    => $id_agenda_cita
+            );
+
+            $result = $db->query($phql, $values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            while ($row = $result->fetch()) {
+                throw new Exception('El estatus del pago ha sido modificado previamente, te sugerimos refrescar la vista.');
+            }
+
+            //  SE BUSCA EL ID DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
+            }
+
+            if ($id_usuario_solicitud == null){
+                throw new Exception('Usuario inexistente en el catalogo');
+            }
+    
+            // INSERTAR NUEVO servicio
+            $phql = "UPDATE tbagenda_citas SET
+                            pagada = 0,
+                            fecha_pago = null,
+                            id_usuario_pago = null,
+                            forma_pago = null
+                    WHERE id = :id_agenda_cita ";
+    
+            $values = [
+                'id_agenda_cita'    => $id_agenda_cita
+            ];
+    
+            $result = $db->execute($phql, $values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) { 
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');

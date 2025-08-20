@@ -116,6 +116,7 @@ return function (Micro $app,$di) {
             $id_servicio        = $request->getQuery('id_servicio');
             $id_locacion_registro   = $request->getQuery('id_locacion_registro');
             $usuario_solicitud      = $request->getQuery('usuario_solicitud');
+            $get_diagnoses          = $request->getQuery('get_diagnoses') ?? null;
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -126,7 +127,15 @@ return function (Micro $app,$di) {
                             a.*,
                             (a.primer_apellido|| ' ' ||COALESCE(a.segundo_apellido,'')||' '||a.nombre) as nombre_completo,
                             COALESCE(b.num_servicios,0) as num_servicios,
-                            c.nombre as locacion_registro
+                            c.nombre as locacion_registro,
+                            a.fecha_nacimiento,
+                            CASE 
+                                WHEN fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 1, '0')
+                                ELSE NULL
+                            END AS edad_actual
+
                         FROM ctpacientes a 
                         LEFT JOIN (
                             SELECT t1.id_paciente, COUNT(1) as num_servicios
@@ -201,7 +210,24 @@ return function (Micro $app,$di) {
             $data = [];
             while ($row = $result->fetch()) {
                 $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
-                $data[]                     = $row;
+                $row['diagnosticos']    = array();
+                if (!empty($get_diagnoses)){
+                    $phql   = " SELECT a.presento_evidencia,b.* FROM tbpacientes_diagnosticos a
+                                LEFT JOIN cttranstornos_neurodesarrollo b ON a.id_transtorno = b.id
+                                WHERE a.id_paciente = :id_paciente ORDER BY b.clave ASC";
+                    $result_diagnosticos    = $db->query($phql,array(
+                        'id_paciente'   => $row['id']
+                    ));
+                    $result_diagnosticos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_diagnosticos){
+                        while($data_diagnostico = $result_diagnosticos->fetch()){
+                            $row['diagnosticos'][]  = $data_diagnostico;
+                        }
+                    }
+                }
+                $row['diagnosticos_registrados']    = count($row['diagnosticos']) > 0 ? 'SI' : 'NO';
+                $data[]                             = $row;
             }
     
             // Devolver los datos en formato JSON
@@ -230,6 +256,7 @@ return function (Micro $app,$di) {
             $nombre             = $request->getPost('nombre') ?? null;
             $celular            = $request->getPost('celular') ?? null;
             $id_locacion_registro   = $request->getPost('id_locacion_registro') ?? null;
+            $fecha_nacimiento       = $request->getPost('fecha_nacimiento') ?? null;
            
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
@@ -279,7 +306,8 @@ return function (Micro $app,$di) {
                                     segundo_apellido,
                                     nombre,
                                     celular,
-                                    id_locacion_registro
+                                    id_locacion_registro,
+                                    fecha_nacimiento
                                 ) 
                      VALUES (
                                 (select fn_crear_clave_paciente()), 
@@ -287,7 +315,8 @@ return function (Micro $app,$di) {
                                 :segundo_apellido,
                                 :nombre,
                                 :celular,
-                                :id_locacion_registro
+                                :id_locacion_registro,
+                                :fecha_nacimiento
                             ) RETURNING id";
     
             $values = [
@@ -296,7 +325,7 @@ return function (Micro $app,$di) {
                 'nombre'                => $nombre,
                 'celular'               => $celular,
                 'id_locacion_registro'  => $id_locacion_registro,
-                
+                'fecha_nacimiento'      => $fecha_nacimiento
             ];
     
             $result = $conexion->query($phql, $values);
@@ -323,6 +352,100 @@ return function (Micro $app,$di) {
             
         } catch (\Exception $e) {
             $conexion->rollback();
+            
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->put('/ctpacientes/save_express', function () use ($app, $db, $request) {
+        try {
+    
+            // OBTENER DATOS JSON
+            $id                 = $request->getPost('id') ?? null;
+            $primer_apellido    = $request->getPost('primer_apellido') ?? null;
+            $segundo_apellido   = $request->getPost('segundo_apellido') ?? null;
+            $nombre             = $request->getPost('nombre') ?? null;
+            $celular            = $request->getPost('celular') ?? null;
+            $id_locacion_registro   = $request->getPost('id_locacion_registro') ?? null;
+            $fecha_nacimiento       = $request->getPost('fecha_nacimiento') ?? null;
+           
+    
+            //  VERIFICACION DE PARAMETROS
+
+            if (empty($id)) {
+                throw new Exception('Par&aacute;metro "Identificador" vac&iacute;o');
+            }
+
+            if (empty($primer_apellido)) {
+                throw new Exception('Par&aacute;metro "Primer apellido" vac&iacute;o');
+            }
+
+            if (empty($nombre)) {
+                throw new Exception('Par&aacute;metro "Nombre" vac&iacute;o');
+            }
+
+            if (empty($celular)) {
+                throw new Exception('Par&aacute;metro "Celular" vac&iacute;o');
+            }
+
+            if (empty($id_locacion_registro)) {
+                throw new Exception('Par&aacute;metro "Locacion" vac&iacute;o');
+            }
+
+            if (!FuncionesGlobales::validarTelefono($celular)){
+                throw new Exception('Parámetro "Celular" invalido');
+            }
+    
+            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
+            $phql = "SELECT * FROM ctpacientes a
+                    WHERE lower(a.primer_apellido) ILIKE :primer_apellido AND
+                          lower(a.segundo_apellido) ILIKE :segundo_apellido AND
+                          lower(a.nombre) ILIKE :nombre AND id <> :id";
+
+            $values = array(
+                'primer_apellido'   => "%".FuncionesGlobales::ToLower($primer_apellido)."%",
+                'segundo_apellido'  => "%".FuncionesGlobales::ToLower($segundo_apellido)."%",
+                'nombre'            => "%".FuncionesGlobales::ToLower($nombre)."%",
+                'id'                => $id
+            );
+    
+            $result = $db->query($phql, $values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            while ($row = $result->fetch()) {
+                throw new Exception('El paciente ya se encuentra registrado');
+            }
+    
+            // INSERTAR NUEVO USUARIO
+            $phql = "UPDATE ctpacientes SET 
+                        primer_apellido = :primer_apellido,
+                        segundo_apellido = :segundo_apellido,
+                        nombre = :nombre,
+                        celular = :celular,
+                        fecha_nacimiento = :fecha_nacimiento
+                    WHERE id = :id";
+    
+            $values = [
+                'primer_apellido'   => $primer_apellido,
+                'segundo_apellido'  => $segundo_apellido,
+                'nombre'            => $nombre,
+                'celular'           => $celular,
+                'fecha_nacimiento'  => $fecha_nacimiento,
+                'id'                => $id            
+            ];
+    
+            $result = $db->execute($phql, $values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
             
             $response = new Response();
             $response->setJsonContent($e->getMessage());
@@ -624,7 +747,8 @@ return function (Micro $app,$di) {
                             TO_CHAR(c.hora_inicio, 'HH24:MI') AS hora_inicio,
                             TO_CHAR(c.hora_termino, 'HH24:MI') AS hora_termino,
                             TRUNC(f.duracion / 60, 0) AS duracion,
-                            g.nombre as nombre_locacion
+                            g.nombre as nombre_locacion,
+                            e.codigo_color
                         FROM tbcitas_programadas a 
                         LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
                         LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
@@ -657,6 +781,7 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $row    = [];
             while ($data = $result->fetch()) {
+                $row[$data['id_cita_programada_servicio']]['codigo_color']      = $data['codigo_color'];
                 $row[$data['id_cita_programada_servicio']]['id_servicio']       = $data['id_servicio'];
                 $row[$data['id_cita_programada_servicio']]['duracion']          = $data['duracion'];
                 $row[$data['id_cita_programada_servicio']]['id_profesional']    = $data['id_profesional'];
@@ -895,6 +1020,117 @@ return function (Micro $app,$di) {
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');
             return $response;
-}
+        }
+    });
+
+    $app->get('/cttranstornos_neurodesarrollo/show', function () use ($app,$db,$request) {
+        try{
+            // Ejecutar el query y obtener el resultado
+            $phql   = "SELECT * FROM cttranstornos_neurodesarrollo ORDER BY clave ASC";
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $arr_return = array();
+            while ($row = $result->fetch()) {
+                $arr_return[]   = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    $app->post('/ctpacientes/save_diagnoses', function () use ($app, $db, $request) {
+        $conexion = $db; 
+        try {
+            $conexion->begin();
+    
+            //  OBTENER PARAMETROS
+            $id_paciente    = $app->request->getPost('id_paciente') ?? null;
+            $obj_info       = $app->request->getPost('obj_info') ?? null;
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+
+            if (empty($id_paciente)){
+                throw new Exception('Par&aacute;metro Identificador vac&iacute;o');
+            }
+
+            //  SE BUSCA LA INFORMACION DEL PACIENTE
+            $phql   = "SELECT * FROM ctpacientes WHERE id = :id_paciente";
+            $result = $db->query($phql,array('id_paciente' => $id_paciente));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $flag_exists    = false;
+            while ($row = $result->fetch()) {
+                $flag_exists    = true;
+            }
+
+            if (!$flag_exists){
+                throw new Exception('Paciente inexistente en el catalogo');
+            }
+
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
+            }
+
+            if ($id_usuario_solicitud == null){
+                throw new Exception('Usuario inexistente en el catalogo');
+            }
+
+            //  SE BORRAN LOS REGISTROS
+            $phql   = " DELETE FROM tbpacientes_diagnosticos 
+                        WHERE id_paciente = :id_paciente";
+
+            $result = $conexion->execute($phql,array(
+                'id_paciente'   => $id_paciente,
+            ));
+
+            //  SE AGREGAN LOS REGISTROS
+            foreach($obj_info as $diagnostico){
+                $phql   = " INSERT INTO tbpacientes_diagnosticos (id_transtorno,id_paciente,presento_evidencia,id_usuario_registro)
+                            VALUES (:id_transtorno,:id_paciente,:presento_evidencia,:id_usuario_registro);";
+
+                $result = $conexion->execute($phql,array(
+                    'id_paciente'   => $id_paciente,
+                    'id_transtorno' => $diagnostico['id_transtorno'],
+                    'presento_evidencia'    => $diagnostico['presento_evidencia'],
+                    'id_usuario_registro'   => $id_usuario_solicitud
+                ));
+            }
+
+            $conexion->commit();
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $conexion->rollback();
+            
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
     });
 };

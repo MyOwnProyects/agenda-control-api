@@ -122,6 +122,7 @@ return function (Micro $app,$di) {
             $data = [];
             while ($row = $result->fetch()) {
                 $row['duracion_minutos']    = $row['duracion'] / 60;
+                $row['label_activo']        = $row['activo'] == 1 ? 'SI' : 'NO';
                 $data[]                     = $row;
             }
     
@@ -151,6 +152,7 @@ return function (Micro $app,$di) {
             $descripcion    = $request->getPost('descripcion') ?? null;
             $costo          = $request->getPost('costo') ?? null;
             $duracion       = $request->getPost('duracion') ?? null;
+            $codigo_color   = $request->getPost('codigo_color') ?? null;
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
             if (empty($clave)) {
@@ -167,6 +169,10 @@ return function (Micro $app,$di) {
 
             if (empty($duracion)) {
                 throw new Exception('Parámetro "Duracion" vacío');
+            }
+
+            if (empty($duracion)) {
+                throw new Exception('Parámetro "codigo de color" vacío');
             }
 
             if (!FuncionesGlobales::validarCantidadMonetaria($costo)){
@@ -189,14 +195,16 @@ return function (Micro $app,$di) {
                                     nombre,
                                     descripcion,
                                     costo,
-                                    duracion
+                                    duracion,
+                                    codigo_color
                                 ) 
                      VALUES (
                                 :clave, 
                                 :nombre, 
                                 :descripcion,
                                 :costo,
-                                :duracion
+                                :duracion,
+                                :codigo_color
                             ) RETURNING id";
     
             $values = [
@@ -204,7 +212,8 @@ return function (Micro $app,$di) {
                 'nombre'        => $nombre,
                 'descripcion'   => $descripcion,
                 'costo'         => FuncionesGlobales::formatearDecimal($costo),
-                'duracion'      => $duracion * 60
+                'duracion'      => $duracion * 60,
+                'codigo_color'  => $codigo_color
             ];
     
             $result = $conexion->query($phql, $values);
@@ -239,10 +248,54 @@ return function (Micro $app,$di) {
         }
     });
 
-    $app->delete('/ctservicios/delete', function () use ($app, $db) {
+    $app->put('/ctservicios/change_status', function () use ($app, $db) {
+        try{
+
+            $id             = $this->request->getPost('id');
+            $status_actual  = $this->request->getPost('status_actual');
+            $nuevo_status   = $this->request->getPost('nuevo_status');
+
+            //  ESTATUS ACTUAl
+            $phql   = "SELECT * FROM ctservicios WHERE id = :id";
+            $result = $db->query($phql, array('id' => $id));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            while ($row = $result->fetch()) {
+                if ($row['activo'] != $status_actual){
+                    throw new Exception('El estatus del servicio ya no es el indicado, favor de refrescar la vista.');
+                }
+            }
+
+            $phql   = "UPDATE ctservicios SET activo = :nuevo_status WHERE id = :id";
+            $result = $db->execute($phql, array('id' => $id,'nuevo_status' => $nuevo_status));
+
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e) {
+            return (new Response())->setJsonContent([
+                'status'  => 'error',
+                'message' => $e->getMessage()
+            ])->setStatusCode(400, 'Bad Request');
+        }
+    });
+
+     $app->delete('/ctservicios/delete', function () use ($app, $db) {
         try{
 
             $id     = $this->request->getPost('id');
+
+            //  SE BUSCA SI EXISTE UNA CITA AGENDADA CON ESTE SERVICIO
+            $phql   = "SELECT 1 FROM tbagenda_citas_servicios WHERE id_servicio = :id";
+            $result = $db->query($phql, array('id' => $id));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            while ($row = $result->fetch()) {
+                throw new Exception('EL servicio no puede ser borrado ya que afectaria registros historicos.');
+            }
 
             $phql   = "DELETE FROM ctservicios WHERE id = :id";
             $result = $db->execute($phql, array('id' => $id));
@@ -273,6 +326,7 @@ return function (Micro $app,$di) {
             $descripcion    = $request->getPost('descripcion') ?? null;
             $costo          = $request->getPost('costo') ?? null;
             $duracion       = $request->getPost('duracion') ?? null;
+            $codigo_color   = $request->getPost('codigo_color') ?? null;
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
             if (empty($clave)) {
@@ -289,6 +343,10 @@ return function (Micro $app,$di) {
 
             if (empty($duracion)) {
                 throw new Exception('Parámetro "Duracion" vacío');
+            }
+
+            if (empty($codigo_color)){
+                throw new Exception('Parámetro "Codigo de color" vacío');
             }
 
             if (!FuncionesGlobales::validarCantidadMonetaria($costo)){
@@ -311,7 +369,8 @@ return function (Micro $app,$di) {
                                     nombre = :nombre,
                                     descripcion = :descripcion,
                                     costo = :costo,
-                                    duracion = :duracion
+                                    duracion = :duracion,
+                                    codigo_color = :codigo_color
                                 WHERE id = :id";
     
             $values = [
@@ -320,7 +379,8 @@ return function (Micro $app,$di) {
                 'nombre'        => $nombre,
                 'descripcion'   => $descripcion,
                 'costo'         => FuncionesGlobales::formatearDecimal($costo),
-                'duracion'      => $duracion * 60
+                'duracion'      => $duracion * 60,
+                'codigo_color'  => $codigo_color
             ];
     
             $result = $conexion->execute($phql, $values);
