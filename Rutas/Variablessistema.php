@@ -56,7 +56,7 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $data = [];
             while ($row = $result->fetch()) {
-                $data[]                     = $row;
+                $data[] = $row;
             }
     
             // Devolver los datos en formato JSON

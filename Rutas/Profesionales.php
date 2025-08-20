@@ -250,7 +250,8 @@ return function (Micro $app,$di) {
                                     t2.clave,
                                     t2.nombre,
                                     t3.duracion,
-                                    t3.costo
+                                    t3.costo,
+                                    t2.codigo_color
                                 FROM ctprofesionales_locaciones_servicios t1
                                 LEFT JOIN ctservicios t2 ON t1.id_servicio = t2.id
                                 LEFT JOIN ctlocaciones_servicios t3 ON t1.id_locacion = t3.id_locacion AND t1.id_servicio = t3.id_servicio
