@@ -316,6 +316,8 @@ return function (Micro $app,$di) {
             $nombre         = $request->getPost('nombre') ?? null;
             $descripcion    = $request->getPost('descripcion') ?? null;
             $lista_permisos     = $request->getPost('lista_permisos') ?? [];
+            $permisos_nuevos    = $request->getPost('permisos_nuevos') ?? null;
+            $permisos_eliminar  = $request->getPost('permisos_eliminar') ?? null;
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
 
@@ -380,8 +382,32 @@ return function (Micro $app,$di) {
     
             foreach ($lista_permisos as $permiso) {
                 $conexion->query($phql, [
-                    'id_permiso'     => $permiso,
-                    'id_tipo_usuario' => $id
+                    'id_permiso'        => $permiso,
+                    'id_tipo_usuario'   => $id
+                ]);
+            }
+
+            //  SE BORRAN TODOS LOS PERMISOS ASIGNADOS A LOS USUARIOS QUE TENGAN ESTE PERFIL
+            foreach($permisos_eliminar as $id_permiso){
+                $phql   = "DELETE FROM ctpermisos_usuarios WHERE id IN (
+                            SELECT a.id FROM ctpermisos_usuarios a 
+                            LEFT JOIN ctusuarios b on a.id_usuario = b.id
+                            WHERE b.id_tipo_usuario = :id AND a.id_permiso  = :id_permiso
+                        )";
+                $conexion->execute($phql, [
+                    'id_permiso'    => $id_permiso,
+                    'id'            => $id
+                ]);
+            }
+
+            //  SE ASIGNAN LOS NUEVOS PERMISOS A LOS USUARIOS
+            foreach($permisos_nuevos as $id_permiso){
+                $phql   = "INSERT INTO ctpermisos_usuarios (id_permiso,id_usuario)
+                            SELECT :id_permiso as id_permiso, id as id_usuario 
+                            FROM ctusuarios WHERE id_tipo_usuario = :id_tipo_usuario;";
+                $conexion->execute($phql, [
+                    'id_permiso'        => $id_permiso,
+                    'id_tipo_usuario'   => $id
                 ]);
             }
     
