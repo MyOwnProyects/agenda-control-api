@@ -427,8 +427,13 @@ return function (Micro $app,$di) {
             // INSERTAR LOS PERMISOS
             $phql = "INSERT INTO ctprofesionales_locaciones_servicios (id_profesional, id_locacion,id_servicio) 
                      VALUES (:id_profesional,:id_locacion,:id_servicio)";
+
+            $id_locaciones  = array();
     
             foreach ($lista_locaciones as $locacion) {
+                if (!in_array($locacion['id_locacion'],$id_locaciones)){
+                    $id_locaciones[]    = $locacion['id_locacion'];
+                }
                 $conexion->query($phql, [
                     'id_profesional'    => $id_profesional,
                     'id_locacion'       => $locacion['id_locacion'],
@@ -500,6 +505,18 @@ return function (Micro $app,$di) {
                 }
 
                 if ( $id_usuario != null){
+                    //  SE ASIGNAN LAS LOCACIONES AL USUARIO
+                    foreach($id_locaciones as $usuario_locacion){
+                        $phql = "INSERT INTO ctusuarios_locaciones (id_locacion, id_usuario) 
+                                    VALUES (:id_locacion, :id_usuario)";
+
+                        $conexion->query($phql, [
+                            'id_locacion'   => $usuario_locacion,
+                            'id_usuario'    => $id_usuario
+                        ]);
+                    }
+
+
                     $phql   = "INSERT INTO ctpermisos_usuarios (id_usuario,id_permiso)
                                 SELECT :id_usuario as id_usuario,id_permiso 
                                 FROM ctpermisos_tipo_usuario
