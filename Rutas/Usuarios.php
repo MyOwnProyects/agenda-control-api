@@ -146,6 +146,9 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $data = [];
             while ($row = $result->fetch()) {
+                if ($accion == 'login' && $row['estatus'] != 1){
+                    throw new Exception('La cuenta se encuentra inactiva');
+                }
                 $row['contrasena']      = $request->hasQuery('fromCatalog') || $request->hasQuery('fromCatalogProfessional') ? null : $row['contrasena'];
                 $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
                 $data[] = $row;
