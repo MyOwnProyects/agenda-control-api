@@ -120,6 +120,13 @@ return function (Micro $app,$di) {
             $citas_adeudo       = $request->getQuery('citas_adeudo') ?? null;
 
             $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+            $arr_estatus_asistencia = [
+                0   => 'FALTA',
+                1   => 'ASISTENCIA',
+                2   => 'RETARDO',
+                3   => 'ACTIVIDAD EN CASA',   
+                null    => 'Sin asignar' 
+            ];
 
             // Definir el query SQL
             $phql   = " SELECT  
@@ -254,6 +261,7 @@ return function (Micro $app,$di) {
                 $row['fecha_completa']  = $dias_semana[$row['day'] - 1].' '.FuncionesGlobales::formatearFecha($row['fecha_cita']) . ' de '. $row['start']. ' a '.$row['end'];
                 $row['label_pagada']    = $row['pagada'] == 1 ? 'SI' : 'NO';
                 $row['label_dia']       = $dias_semana[$row['day'] - 1];
+                $row['label_asistencia']    = $arr_estatus_asistencia[$row['asistencia']];
                 if (!empty($get_servicios)){
                     $phql   = " SELECT 
                                     a.*,
