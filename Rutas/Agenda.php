@@ -406,6 +406,7 @@ return function (Micro $app,$di) {
             $id_motivo_cancelacion  = $request->getPost('id_motivo_cancelacion');
             $observaciones_cancelacion  = $request->getPost('observaciones_cancelacion');
             $usuario_solicitud          = $request->getPost('usuario_solicitud');
+            $tipo_movimiento            = $request->getPost('tipo_movimiento');
 
             if (empty($id_agenda_cita)){
                 throw new Exception('Parametro identificar de cita vacio');
@@ -451,19 +452,32 @@ return function (Micro $app,$di) {
                 throw new Exception('la cita ya no se encuentra disponible para realizar la solicitud indicada');
             }
 
+            //  ESTATUS DE ACTIVA
+            // 1 CITA ACTIVA Y DISPONIBLE
+            // 0 CITA CANCELADA
+            // 2 CITA PENDIENTE DE AGENDAR
+            
+            $activa = $tipo_movimiento == 'cancelar' ? 0 : 2;
+
             $phql   = " UPDATE tbagenda_citas SET 
-                            activa = 0,
+                            activa = :activa,
                             id_motivo_cancelacion = :id_motivo_cancelacion,
                             observaciones_cancelacion = :observaciones_cancelacion,
                             id_usuario_cancelacion = :id_usuario_cancelacion,
-                            fecha_cancelacion = NOW()  
-                        WHERE id = :id";
+                            fecha_cancelacion = NOW() ";
             $values = array(
                 'id'                        => $id_agenda_cita,
                 'id_motivo_cancelacion'     => $id_motivo_cancelacion,
                 'observaciones_cancelacion' => $observaciones_cancelacion,
-                'id_usuario_cancelacion'    => $id_usuario_solicitud
+                'id_usuario_cancelacion'    => $id_usuario_solicitud,
+                'activa'                    => $activa
             );
+
+            if ($tipo_movimiento == 'pendiente'){
+                $phql   .= ' , asistencia = 0 ';
+            }
+
+            $phql   .= " WHERE id = :id ";
             $result = $db->execute($phql, $values);
 
             // RESPUESTA JSON
