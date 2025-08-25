@@ -23,7 +23,8 @@ return function (Micro $app,$di) {
             $from_catalog   = $request->getQuery('from_catalog') ?? null;
             $tipo_busqueda   = $request->getQuery('tipo_busqueda') ?? null;
             $citas_pagadas   = $request->getQuery('citas_pagadas') ?? null;
-            $citas_adeudo       = $request->getQuery('citas_adeudo') ?? null;
+            $citas_adeudo           = $request->getQuery('citas_adeudo') ?? null;
+            $citas_pagadas_rango    = $request->getQuery('citas_pagadas_rango') ?? null;
         
             // Definir el query SQL
             $phql   = "SELECT 
@@ -32,7 +33,7 @@ return function (Micro $app,$di) {
                         WHERE 1 = 1 ";
             $values = array();
 
-            if ($from_catalog && (!empty($fecha_inicio) || !empty($fecha_termino))){
+            if ($from_catalog && (!empty($fecha_inicio) || !empty($fecha_termino)) && empty($citas_pagadas_rango)){
                 if (!empty($fecha_inicio) && !empty($fecha_termino)){
                     $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
                     $values['fecha_inicio']     = $fecha_inicio;
@@ -61,9 +62,16 @@ return function (Micro $app,$di) {
             }
 
             if (!empty($tipo_busqueda)){
+
                 if ($tipo_busqueda == 'activas'){
                     $phql   .= " AND a.activa = 1 ";
-                } elseif ($tipo_busqueda == 'canceladas'){
+                }
+
+                if ($tipo_busqueda == 'pendientes'){
+                    $phql   .= " AND a.activa = 2 ";
+                }
+
+                if ($tipo_busqueda == 'canceladas'){
                     $phql   .= " AND a.activa = 0 ";
                 }
             }
@@ -74,6 +82,12 @@ return function (Micro $app,$di) {
 
             if (!empty($citas_adeudo)){
                 $phql           .= " AND a.pagada = 0 ";
+            }
+
+            if (!empty($citas_pagadas_rango)){
+                $phql   .= "AND a.pagada = 1 AND a.fecha_pago BETWEEN :fecha_inicio AND :fecha_termino ";
+                $values['fecha_inicio']     = $fecha_inicio;
+                $values['fecha_termino']    = $fecha_termino;
             }
 
             // Ejecutar el query y obtener el resultado
@@ -118,8 +132,22 @@ return function (Micro $app,$di) {
             $tipo_busqueda      = $request->getQuery('tipo_busqueda') ?? null;
             $citas_pagadas      = $request->getQuery('citas_pagadas') ?? null;
             $citas_adeudo       = $request->getQuery('citas_adeudo') ?? null;
+            $citas_pagadas_rango    = $request->getQuery('citas_pagadas_rango') ?? null;
 
             $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+            $arr_estatus_asistencia = [
+                0   => 'FALTA',
+                1   => 'ASISTENCIA',
+                2   => 'RETARDO',
+                3   => 'ACTIVIDAD EN CASA',   
+                null    => 'Sin asignar' 
+            ];
+
+            $arr_estatus_cita   = array(
+                0   => 'CANCELADA',
+                1   => 'ACTIVA',
+                2   => 'PENDIENTE DE AGENDAR',
+            );
 
             // Definir el query SQL
             $phql   = " SELECT  
@@ -187,7 +215,7 @@ return function (Micro $app,$di) {
                 $values['fecha_termino']    = $rango_fechas['fecha_termino'];
             }
 
-            if ($from_catalog && (!empty($fecha_inicio) || !empty($fecha_termino))){
+            if ($from_catalog && (!empty($fecha_inicio) || !empty($fecha_termino)) && empty($citas_pagadas_rango)){
                 if (!empty($fecha_inicio) && !empty($fecha_termino)){
                     $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
                     $values['fecha_inicio']     = $fecha_inicio;
@@ -221,9 +249,16 @@ return function (Micro $app,$di) {
             }
 
             if (!empty($tipo_busqueda)){
+
                 if ($tipo_busqueda == 'activas'){
                     $phql   .= " AND a.activa = 1 ";
-                } elseif ($tipo_busqueda == 'canceladas'){
+                }
+
+                if ($tipo_busqueda == 'pendientes'){
+                    $phql   .= " AND a.activa = 2 ";
+                }
+
+                if ($tipo_busqueda == 'canceladas'){
                     $phql   .= " AND a.activa = 0 ";
                 }
             }
@@ -234,6 +269,12 @@ return function (Micro $app,$di) {
 
             if (!empty($citas_adeudo)){
                 $phql           .= " AND a.pagada = 0 ";
+            }
+
+            if (!empty($citas_pagadas_rango)){
+                $phql   .= "AND a.pagada = 1 AND a.fecha_pago BETWEEN :fecha_inicio AND :fecha_termino ";
+                $values['fecha_inicio']     = $fecha_inicio;
+                $values['fecha_termino']    = $fecha_termino;
             }
 
             $phql   .= ' ORDER BY a.fecha_cita,a.hora_inicio,a.hora_termino ';
@@ -250,10 +291,11 @@ return function (Micro $app,$di) {
             $data = [];
             while ($row = $result->fetch()) {
                 $row['servicios']   = array();
-                $row['estatus']     = $row['activa'] == 1 ? 'ACTIVA' : 'CANCELADA';
+                $row['estatus']     = $arr_estatus_cita[$row['activa']];
                 $row['fecha_completa']  = $dias_semana[$row['day'] - 1].' '.FuncionesGlobales::formatearFecha($row['fecha_cita']) . ' de '. $row['start']. ' a '.$row['end'];
                 $row['label_pagada']    = $row['pagada'] == 1 ? 'SI' : 'NO';
                 $row['label_dia']       = $dias_semana[$row['day'] - 1];
+                $row['label_asistencia']    = $arr_estatus_asistencia[$row['asistencia']];
                 if (!empty($get_servicios)){
                     $phql   = " SELECT 
                                     a.*,
@@ -398,6 +440,7 @@ return function (Micro $app,$di) {
             $id_motivo_cancelacion  = $request->getPost('id_motivo_cancelacion');
             $observaciones_cancelacion  = $request->getPost('observaciones_cancelacion');
             $usuario_solicitud          = $request->getPost('usuario_solicitud');
+            $tipo_movimiento            = $request->getPost('tipo_movimiento');
 
             if (empty($id_agenda_cita)){
                 throw new Exception('Parametro identificar de cita vacio');
@@ -443,19 +486,32 @@ return function (Micro $app,$di) {
                 throw new Exception('la cita ya no se encuentra disponible para realizar la solicitud indicada');
             }
 
+            //  ESTATUS DE ACTIVA
+            // 1 CITA ACTIVA Y DISPONIBLE
+            // 0 CITA CANCELADA
+            // 2 CITA PENDIENTE DE AGENDAR
+            
+            $activa = $tipo_movimiento == 'cancelar' ? 0 : 2;
+
             $phql   = " UPDATE tbagenda_citas SET 
-                            activa = 0,
+                            activa = :activa,
                             id_motivo_cancelacion = :id_motivo_cancelacion,
                             observaciones_cancelacion = :observaciones_cancelacion,
                             id_usuario_cancelacion = :id_usuario_cancelacion,
-                            fecha_cancelacion = NOW()  
-                        WHERE id = :id";
+                            fecha_cancelacion = NOW() ";
             $values = array(
                 'id'                        => $id_agenda_cita,
                 'id_motivo_cancelacion'     => $id_motivo_cancelacion,
                 'observaciones_cancelacion' => $observaciones_cancelacion,
-                'id_usuario_cancelacion'    => $id_usuario_solicitud
+                'id_usuario_cancelacion'    => $id_usuario_solicitud,
+                'activa'                    => $activa
             );
+
+            if ($tipo_movimiento == 'pendiente'){
+                $phql   .= ' , asistencia = 0 ';
+            }
+
+            $phql   .= " WHERE id = :id ";
             $result = $db->execute($phql, $values);
 
             // RESPUESTA JSON
@@ -608,7 +664,8 @@ return function (Micro $app,$di) {
 
             //  SI TRAE ID_AGENDA_CITA, ESTA SE CANCELA POR EL MOTIVO INDICADO
             if (!empty($id_agenda_cita_anterior)){
-                $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita AND activa = 1 ";
+                $phql   = "SELECT * FROM tbagenda_citas 
+                            WHERE id = :id_agenda_cita AND activa <> 0 ";
                 $result = $db->query($phql, array(
                     'id_agenda_cita'   => $id_agenda_cita_anterior
                 ));
@@ -630,6 +687,10 @@ return function (Micro $app,$di) {
 
                         if ($id_profesional != $data['id_profesional']){
                             $clave_cancelacion  = 'CAP';
+                        }
+
+                        if ($data['activa'] == 2){
+                            $clave_cancelacion  = 'CPREA';
                         }
 
                         //  SE OBTIENE EL ID DEL MOTIVO CON CLAVE CAS
