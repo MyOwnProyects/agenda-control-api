@@ -951,7 +951,8 @@ return function (Micro $app,$di) {
                                 activa = 0, 
                                 id_motivo_cancelacion = :id_motivo_cancelacion, 
                                 observaciones_cancelacion   = 'CANCELACION POR BAJA DE PACIENTE',
-                                id_usuario_cancelacion      = :id_usuario_cancelacion
+                                id_usuario_cancelacion      = :id_usuario_cancelacion,
+                                fecha_cancelacion = now()
                             WHERE id_paciente = :id_paciente AND activa = 1 AND fecha_cita >= current_date";
 
                 $result_delete  = $conexion->execute($phql,array(
