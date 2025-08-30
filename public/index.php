@@ -72,16 +72,24 @@ foreach (glob(__DIR__ . '/..//Rutas/*.php') as $routeFile) {
 }
 
 // Definir el manejador para rutas no encontradas
-$app->notFound(function () {
+// Obtener la URI original
+$originalUri = $_SERVER["REQUEST_URI"];
+
+// Normalizar la URI eliminando el prefijo "/api" si existe
+$normalizedUri = (strpos($originalUri, '/api') === 0) ? substr($originalUri, 4) : $originalUri;
+
+// Definir el manejador para rutas no encontradas
+$app->notFound(function () use ($originalUri) {
     $response = new Response();
     $response->setStatusCode(404, "Not Found");
     $response->setJsonContent([
         'status'  => 'error',
-        'message' => 'La ruta solicitada no existe.'
+        'message' => 'La ruta solicitada no existe.',
+        'ruta'    => $originalUri
     ]);
     return $response;
 });
 
-// Manejar la solicitud
-$app->handle($_SERVER["REQUEST_URI"]);
+// Manejar la solicitud con la URI normalizada
+$app->handle($normalizedUri);
 
