@@ -99,29 +99,104 @@ return function (Micro $app,$di) {
     });
 
     // Ruta principal para obtener todos los usuarios
+    $app->get('/tbbitacora_movimientos/count', function () use ($app,$db,$request) {
+        try{
+            $controlador    = $request->getQuery('controlador');
+            $accion         = $request->getQuery('accion');
+            $clave_usuario  = $request->getQuery('clave_usuario');
+            $fecha_inicio   = $request->getQuery('fecha_inicio');
+            $fecha_limite   = $request->getQuery('fecha_limite');
+        
+            // Definir el query SQL
+            $phql   = "SELECT COUNT(*) as num_rows FROM tbbitacora_movimientos WHERE 1 = 1 ";
+            $values = array();
+    
+            if (!empty($clave_usuario)){
+                $phql           .= " AND clave_usuario = :clave_usuario";
+                $values['clave_usuario']    = $clave_usuario;
+            }
+
+            if (!empty($controlador)){
+                $phql           .= " AND controlador = :controlador";
+                $values['controlador']  = $controlador;
+            }
+
+            if (!empty($accion)){
+                $phql           .= " AND accion = :accion";
+                $values['accion']   = $accion;
+            }
+
+            if (empty($fecha_inicio) && empty($fecha_termino)){
+                throw new Exception('Ingrese un rango de fechas');
+            } else {
+                $phql   .= " AND fecha_hora BETWEEN :fecha_inicio AND :fecha_limite ";
+                $values['fecha_inicio'] = $fecha_inicio;
+                $values['fecha_limite'] = $fecha_limite;
+            }
+
+            // if ($request->hasQuery('offset')){
+            //     $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
+            // }
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $num_rows   = 0;
+            while ($row = $result->fetch()) {
+                $num_rows   = $row['num_rows'];
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($num_rows);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'Created');
+            return $response;
+        }
+        
+    });
+
+    // Ruta principal para obtener todos los usuarios
     $app->get('/tbbitacora_movimientos/show', function () use ($app,$db,$request) {
         try{
             $controlador    = $request->getQuery('controlador');
             $accion         = $request->getQuery('accion');
             $clave_usuario  = $request->getQuery('clave_usuario');
+            $fecha_inicio   = $request->getQuery('fecha_inicio');
+            $fecha_limite   = $request->getQuery('fecha_limite');
         
             // Definir el query SQL
             $phql   = "SELECT * FROM tbbitacora_movimientos WHERE 1 = 1 ";
             $values = array();
     
             if (!empty($clave_usuario)){
-                $phql           .= " AND a.clave_usuario = :clave_usuario";
+                $phql           .= " AND clave_usuario = :clave_usuario";
                 $values['clave_usuario']    = $clave_usuario;
             }
 
             if (!empty($controlador)){
-                $phql           .= " AND a.controlador = :controlador";
+                $phql           .= " AND controlador = :controlador";
                 $values['controlador']  = $controlador;
             }
 
             if (!empty($accion)){
-                $phql           .= " AND a.accion = :accion";
+                $phql           .= " AND accion = :accion";
                 $values['accion']   = $accion;
+            }
+
+            if (empty($fecha_inicio) && empty($fecha_termino)){
+                throw new Exception('Ingrese un rango de fechas');
+            } else {
+                $phql   .= " AND fecha_hora BETWEEN :fecha_inicio AND :fecha_limite ";
+                $values['fecha_inicio'] = $fecha_inicio;
+                $values['fecha_limite'] = $fecha_limite;
             }
 
             $phql   .= " ORDER BY fecha_hora DESC";
@@ -138,6 +213,49 @@ return function (Micro $app,$di) {
             $data = [];
             while ($row = $result->fetch()) {
                 $data[] = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'Created');
+            return $response;
+        }
+        
+    });
+
+    // Ruta principal para obtener todos los usuarios
+    $app->get('/ctbitacora_acciones/show', function () use ($app,$db,$request) {
+        try{
+            $controlador            = $request->getQuery('controlador');
+        
+            // Definir el query SQL
+            $phql   = "SELECT controlador,accion FROM ctbitacora_acciones WHERE 1 = 1 ";
+            $values = array();
+
+            $phql   .= " ORDER BY controlador,accion DESC";
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $data = array(
+                'lista_controladores'   => array(),
+                'todos_registros'       => array()
+            );
+            while ($row = $result->fetch()) {
+                if (!in_array($row['controlador'],$data['lista_controladores'])){
+                    $data['lista_controladores'][]  = $row['controlador'];
+                }
+
+                $data['todos_registros'][$row['controlador']][] = $row;
             }
     
             // Devolver los datos en formato JSON
