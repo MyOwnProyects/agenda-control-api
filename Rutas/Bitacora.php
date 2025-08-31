@@ -2,6 +2,7 @@
 
 use Phalcon\Mvc\Micro;
 use Phalcon\Http\Response;
+use Helpers\FuncionesGlobales;
 
 return function (Micro $app,$di) {
 
@@ -106,6 +107,7 @@ return function (Micro $app,$di) {
             $clave_usuario  = $request->getQuery('clave_usuario');
             $fecha_inicio   = $request->getQuery('fecha_inicio');
             $fecha_limite   = $request->getQuery('fecha_limite');
+            $mensaje        = $request->getQuery('mensaje');
         
             // Definir el query SQL
             $phql   = "SELECT COUNT(*) as num_rows FROM tbbitacora_movimientos WHERE 1 = 1 ";
@@ -129,14 +131,15 @@ return function (Micro $app,$di) {
             if (empty($fecha_inicio) && empty($fecha_termino)){
                 throw new Exception('Ingrese un rango de fechas');
             } else {
-                $phql   .= " AND fecha_hora BETWEEN :fecha_inicio AND :fecha_limite ";
+                $phql   .= " AND fecha_hora::DATE BETWEEN :fecha_inicio AND :fecha_limite ";
                 $values['fecha_inicio'] = $fecha_inicio;
                 $values['fecha_limite'] = $fecha_limite;
             }
 
-            // if ($request->hasQuery('offset')){
-            //     $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
-            // }
+            if (!empty($mensaje)){
+                $phql   .= " AND lower(mensaje) ILIKE :mensaje ";
+                $values['mensaje'] = "%".FuncionesGlobales::ToLower($mensaje)."%";
+            }
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -171,6 +174,7 @@ return function (Micro $app,$di) {
             $clave_usuario  = $request->getQuery('clave_usuario');
             $fecha_inicio   = $request->getQuery('fecha_inicio');
             $fecha_limite   = $request->getQuery('fecha_limite');
+            $mensaje        = $request->getQuery('mensaje');
         
             // Definir el query SQL
             $phql   = "SELECT * FROM tbbitacora_movimientos WHERE 1 = 1 ";
@@ -192,11 +196,16 @@ return function (Micro $app,$di) {
             }
 
             if (empty($fecha_inicio) && empty($fecha_termino)){
-                throw new Exception('Ingrese un rango de fechas');
+                //throw new Exception('Ingrese un rango de fechas');
             } else {
-                $phql   .= " AND fecha_hora BETWEEN :fecha_inicio AND :fecha_limite ";
+                $phql   .= " AND fecha_hora::DATE BETWEEN :fecha_inicio AND :fecha_limite ";
                 $values['fecha_inicio'] = $fecha_inicio;
                 $values['fecha_limite'] = $fecha_limite;
+            }
+
+            if (!empty($mensaje)){
+                $phql   .= " AND lower(mensaje) ILIKE :mensaje ";
+                $values['mensaje'] = "%".FuncionesGlobales::ToLower($mensaje)."%";
             }
 
             $phql   .= " ORDER BY fecha_hora DESC";
