@@ -12,9 +12,15 @@ DECLARE
     arr_id_paciente         INT[];
     count_pacientes         INT;
     count_citas             INT;
+    count_citas_pendientes  INT;
     v_dias                  INT;
     v_id_usuario_agenda     INT;
     v_id_motivo_cancelacion INT;
+    v_estatus_cita          INT;
+    v_mensaje_error         TEXT;
+    v_flag_error_motivo_cancelacion INT;
+    v_flag_error_usuario_agenda     INT;
+    v_flag_error_fecha_cancelacion  TIMESTAMP;
 BEGIN
 
     --  VALIDACION DE FECHA DE INICIO
@@ -77,8 +83,9 @@ BEGIN
         observaciones_cancelacion = 'SE REALIZO UNA NUEVA APERTURA DE AGENDA EN LAS FECHAS DE ESTA CITA'
     WHERE id_paciente = ANY (arr_id_paciente) and activa = 1 AND fecha_cita::DATE between p_fecha_inicio and p_fecha_inicio::date + (v_dias || ' days')::interval;
 
-    count_pacientes := COUNT(arr_id_paciente);
+    count_pacientes := cardinality(arr_id_paciente);
     count_citas     := 0;
+    count_citas_pendientes  := 0;
 
     FOR i IN 1..7 LOOP
         FOR arr_info_cita IN
@@ -128,15 +135,81 @@ BEGIN
 
                 v_id_agenda_cita    := null;
 
-                INSERT INTO tbagenda_citas (id_paciente,id_locacion,fecha_cita,dia,hora_inicio,hora_termino,id_usuario_agenda,id_cita_programada,id_profesional,total)
-                VALUES (arr_info_cita.id_paciente,p_id_locacion,fecha_actual,i,arr_info_cita.hora_inicio,arr_info_cita.hora_termino,v_id_usuario_agenda,arr_info_cita.id_cita_programada,arr_info_cita.id_profesional,arr_info_cita.costo) 
+                --  SE VALIDA EN CASO DE QUE YA EXISTA UNA CITA PROGRAMADA
+                --  QUE SE EMPALME CON LA CITA A GENERAR, DE SER ASI SE MARCA LA CITA A GENERAR
+                --  COMO PENDIENTE A REAGENDAR, ES DECIR ESTATUS = 2
+                v_estatus_cita  := 1;
+                v_mensaje_error := null;
+                v_flag_error_motivo_cancelacion := null;
+                v_flag_error_usuario_agenda     := null;
+                v_flag_error_fecha_cancelacion  := NULL;
+
+                -- Manejo de excepción al validar citas
+                BEGIN
+                    RAISE NOTICE 'PARAMETROS A FUNCION (%) (%) (%)',fecha_actual::DATE,arr_info_cita.hora_inicio::TIME,arr_info_cita.hora_termino::TIME;
+                    PERFORM fn_validar_citas_diarias(
+                        arr_info_cita.id_profesional,
+                        arr_info_cita.id_paciente,
+                        fecha_actual::DATE,
+                        to_char(arr_info_cita.hora_inicio, 'HH24:MI'),
+                        to_char(arr_info_cita.hora_termino, 'HH24:MI')
+                    );
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        -- Si ocurre excepción, marcamos estatus como pendiente a reagendar
+                        v_estatus_cita := 2;
+                        v_mensaje_error := SQLERRM;  -- Captura el mensaje del RAISE EXCEPTION
+                        v_flag_error_motivo_cancelacion := v_id_motivo_cancelacion;
+                        v_flag_error_usuario_agenda     := v_id_usuario_agenda;
+                        v_flag_error_fecha_cancelacion  := NOW();
+
+                        RAISE NOTICE 'Conflicto de cita: %', v_mensaje_error;
+                END;
+
+                INSERT INTO tbagenda_citas (
+                    id_paciente,
+                    id_locacion,
+                    fecha_cita,dia,
+                    hora_inicio,
+                    hora_termino,
+                    id_usuario_agenda,
+                    id_cita_programada,
+                    id_profesional,
+                    total,
+                    activa,
+                    id_motivo_cancelacion,
+                    observaciones_cancelacion,
+                    id_usuario_cancelacion,
+                    fecha_cancelacion
+                )
+                VALUES (
+                    arr_info_cita.id_paciente,
+                    p_id_locacion,
+                    fecha_actual,
+                    i,
+                    arr_info_cita.hora_inicio,
+                    arr_info_cita.hora_termino,
+                    v_id_usuario_agenda,
+                    arr_info_cita.id_cita_programada,
+                    arr_info_cita.id_profesional,
+                    arr_info_cita.costo,
+                    v_estatus_cita,
+                    v_flag_error_motivo_cancelacion,
+                    v_mensaje_error,
+                    v_flag_error_usuario_agenda,
+                    v_flag_error_fecha_cancelacion
+                ) 
                 RETURNING id INTO v_id_agenda_cita;
 
                 --  SE CREA REGISTRO DEL SERVICIO
                 INSERT INTO tbagenda_citas_servicios (id_agenda_cita,id_servicio,costo,duracion)
                 VALUES (v_id_agenda_cita,arr_info_cita.id_servicio,arr_info_cita.costo,arr_info_cita.duracion);
 
-                count_citas := count_citas + 1;
+                IF v_estatus_cita = 1 THEN
+                    count_citas := count_citas + 1;
+                ELSE 
+                    count_citas_pendientes  := count_citas_pendientes + 1;
+                END IF;
 
             END LOOP;
 
@@ -144,6 +217,10 @@ BEGIN
 
     END LOOP;
     
-    RETURN 'Se generaron '|| count_citas || ' citas para '|| count_pacientes || ' paciente(s)';
+    IF count_citas_pendientes = 0 THEN 
+        RETURN 'Se generaron '|| count_citas || ' citas para '|| count_pacientes || ' paciente(s)';
+    ELSE 
+        RETURN 'Se generaron '|| count_citas || ' citas para '|| count_pacientes || ' paciente(s), pero '|| count_citas_pendientes || ' citas fueron marcadas como pendientes por reagendar por conflicos de horarios, te sugerimos revisar estos registros en el modulo de CONTRO DE CITAS. ';
+    END IF;
 END;
 $$ LANGUAGE plpgsql;
