@@ -393,7 +393,7 @@ return function (Micro $app,$di) {
         }
     });
 
-    $app->post('/tbapertura_agenda/save', function () use ($app,$db,$request) {
+    $app->post('/tbapertura_agenda/save', function () use ($app,$db,$request) {        
         try{
 
             $id_locacion    = $request->getPost('id_locacion') ?? null;
@@ -401,6 +401,7 @@ return function (Micro $app,$di) {
             $fecha_inicio   = $request->getPost('fecha_inicio') ?? null;
             $fecha_termino  = $request->getPost('fecha_termino') ?? null;
             $clave_usuario  = $request->getPost('usuario_solicitud') ?? null;
+            $return_mensaje = 'OK';
 
             try{
                 //  SE AGENDAN LAS CITAS DEL PACIENTE
@@ -413,19 +414,27 @@ return function (Micro $app,$di) {
                     'clave_usuario' => $clave_usuario
                 );
 
-                $result_citas   = $db->execute($phql,$values);
+                $result = $db->query($phql,$values);
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result){
+                    while($data = $result->fetch()){
+                        $return_mensaje = $data['fn_programar_citas'];
+                    }
+                }
             }catch(\Exception $err){
                 throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
             }
     
             // RESPUESTA JSON
             $response = new Response();
-            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setJsonContent(array('MSG' => $return_mensaje));
             $response->setStatusCode(200, 'OK');
             return $response;
 
         }catch (\Exception $e){
             // Devolver los datos en formato JSON
+            $conexion->rollback();
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');
