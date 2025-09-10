@@ -157,16 +157,16 @@ return function (Micro $app,$di) {
         
     });
 
-    $app->post('/cttipo_usuarios/create', function () use ($app, $db) {
+    $app->post('/cttipo_usuarios/create', function () use ($app, $db,$request) {
         $conexion = $db; 
         try {
             $conexion->begin();
     
             // OBTENER DATOS JSON
-            $clave          = $this->request->getPost('clave') ?? null;
-            $nombre         = $this->request->getPost('nombre') ?? null;
-            $descripcion    = $this->request->getPost('descripcion') ?? null;
-            $lista_permisos     = $this->request->getPost('lista_permisos') ?? [];
+            $clave          = $request->getPost('clave') ?? null;
+            $nombre         = $request->getPost('nombre') ?? null;
+            $descripcion    = $request->getPost('descripcion') ?? null;
+            $lista_permisos     = $request->getPost('lista_permisos') ?? [];
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
             if (empty($clave)) {
@@ -244,11 +244,11 @@ return function (Micro $app,$di) {
         }
     });
 
-    $app->delete('/cttipo_usuarios/change_estatus', function () use ($app, $db) {
+    $app->delete('/cttipo_usuarios/change_estatus', function () use ($app, $db,$request) {
         try{
             //  SE UTILIZARA UN BORRADO LOGICO PARA EVITAR DEJAR
             //  A LOS USUARIOS SIN UN TIPO
-            $id_tipo_usuario    = $this->request->getPost('id');
+            $id_tipo_usuario    = $request->getPost('id');
             $activo             = '';
             $flag_exists        = false;
 

@@ -267,10 +267,10 @@ return function (Micro $app,$di) {
         }
     });
 
-    $app->delete('/ctlocaciones/delete', function () use ($app, $db) {
+    $app->delete('/ctlocaciones/delete', function () use ($app, $db,$request) {
         try{
 
-            $id     = $this->request->getPost('id');
+            $id     = $request->getPost('id');
 
             $phql   = "DELETE FROM ctlocaciones WHERE id = :id";
             $result = $db->execute($phql, array('id' => $id));
