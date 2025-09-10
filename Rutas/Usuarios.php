@@ -398,11 +398,11 @@ return function (Micro $app,$di) {
         }
     });
 
-    $app->put('/ctusuarios/change_status', function () use ($app, $db) {
+    $app->put('/ctusuarios/change_status', function () use ($app, $db,$request) {
         try{
             //  SE UTILIZARA UN BORRADO LOGICO PARA EVITAR DEJAR
             //  A LOS USUARIOS SIN UN TIPO
-            $id_usuario     = $this->request->getPost('id');
+            $id_usuario     = $request->getPost('id');
             $estatus        = '';
             $flag_exists    = false;
 
@@ -441,11 +441,11 @@ return function (Micro $app,$di) {
         }
     });
 
-    $app->delete('/ctusuarios/delete', function () use ($app, $db) {
+    $app->delete('/ctusuarios/delete', function () use ($app, $db,$request) {
         try{
             //  SE UTILIZARA UN BORRADO LOGICO PARA EVITAR DEJAR
             //  A LOS USUARIOS SIN UN TIPO
-            $id     = $this->request->getPost('id');
+            $id     = $request->getPost('id');
 
             $phql   = "DELETE FROM ctusuarios WHERE id = :id";
             $result = $db->execute($phql, array('id' => $id));

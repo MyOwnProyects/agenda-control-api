@@ -554,11 +554,21 @@ return function (Micro $app,$di) {
         }
     });
 
-    $app->delete('/ctprofesionales/delete', function () use ($app, $db) {
+    $app->delete('/ctprofesionales/delete', function () use ($app, $db,$request) {
         $conexion = $db;
         try{
             $conexion->begin();
-            $id     = $this->request->getPost('id');
+            $id     = $request->getPost('id');
+
+            $phql   = "SELECT 1 FROM tbagenda_citas WHERE id_profesional = :id_profesional LIMIT 1";
+            $result = $conexion->query($phql,array('id_profesional' => $id));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    throw new Exception('Existen registros historicos que evitan continuar con el borrado del profesional');
+                }
+            }
 
             $phql   = "DELETE FROM ctprofesionales WHERE id = :id";
             $result = $db->execute($phql, array('id' => $id));
@@ -577,10 +587,10 @@ return function (Micro $app,$di) {
 
         }catch (\Exception $e) {
             $conexion->rollback();
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
         }
     });
 
@@ -658,19 +668,18 @@ return function (Micro $app,$di) {
             
         } catch (\Exception $e) {
             $conexion->rollback();
-            
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
         }
     });
 
-    $app->put('/ctprofesionales/change_status', function () use ($app, $db) {
+    $app->put('/ctprofesionales/change_status', function () use ($app, $db,$request) {
         try{
             //  SE UTILIZARA UN BORRADO LOGICO PARA EVITAR DEJAR
             //  A LOS USUARIOS SIN UN TIPO
-            $id             = $this->request->getPost('id');
+            $id             = $request->getPost('id');
             $estatus        = '';
             $flag_exists    = false;
 
@@ -702,10 +711,10 @@ return function (Micro $app,$di) {
             return $response;
 
         }catch (\Exception $e) {
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
         }
     });
 
@@ -808,11 +817,10 @@ return function (Micro $app,$di) {
             
         } catch (\Exception $e) {
             $conexion->rollback();
-            
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
         }
     });
 };
