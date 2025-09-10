@@ -248,12 +248,12 @@ return function (Micro $app,$di) {
         }
     });
 
-    $app->put('/ctservicios/change_status', function () use ($app, $db) {
+    $app->put('/ctservicios/change_status', function () use ($app, $db,$request) {
         try{
 
-            $id             = $this->request->getPost('id');
-            $status_actual  = $this->request->getPost('status_actual');
-            $nuevo_status   = $this->request->getPost('nuevo_status');
+            $id             = $request->getPost('id');
+            $status_actual  = $request->getPost('status_actual');
+            $nuevo_status   = $request->getPost('nuevo_status');
 
             //  ESTATUS ACTUAl
             $phql   = "SELECT * FROM ctservicios WHERE id = :id";
@@ -283,10 +283,10 @@ return function (Micro $app,$di) {
         }
     });
 
-     $app->delete('/ctservicios/delete', function () use ($app, $db) {
+     $app->delete('/ctservicios/delete', function () use ($app, $db,$request) {
         try{
 
-            $id     = $this->request->getPost('id');
+            $id     = $request->getPost('id');
 
             //  SE BUSCA SI EXISTE UNA CITA AGENDADA CON ESTE SERVICIO
             $phql   = "SELECT 1 FROM tbagenda_citas_servicios WHERE id_servicio = :id";
