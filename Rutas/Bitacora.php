@@ -23,6 +23,8 @@ return function (Micro $app,$di) {
             $ip_cliente     = $request->getPost('ip_cliente');
             $mensaje        = $request->getPost('mensaje');
             $data           = $request->getPost('data');
+            $bfp            = $request->getPost('bfp') ?? null;
+            $navegador      = $request->getPost('navegador') ?? null;
     
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
             if (empty($clave_usuario)) {
@@ -67,8 +69,8 @@ return function (Micro $app,$di) {
             }
     
             // INSERTAR NUEVO USUARIO
-            $phql = "INSERT INTO tbbitacora_movimientos (clave_usuario,controlador,accion,ip_cliente,mensaje,data) 
-                     VALUES (:clave_usuario,:controlador,:accion,:ip_cliente,:mensaje,:data)";
+            $phql = "INSERT INTO tbbitacora_movimientos (clave_usuario,controlador,accion,ip_cliente,mensaje,data,bfp,navegador) 
+                     VALUES (:clave_usuario,:controlador,:accion,:ip_cliente,:mensaje,:data,:bfp,:navegador)";
     
             $values = [
                 'clave_usuario' => $clave_usuario,
@@ -76,7 +78,9 @@ return function (Micro $app,$di) {
                 'accion'        => $accion,
                 'ip_cliente'    => $ip_cliente,
                 'mensaje'       => $mensaje,
-                'data'          => empty($data) ? null : json_encode($data)
+                'data'          => empty($data) ? null : json_encode($data),
+                'bfp'           => $bfp,
+                'navegador'     => $navegador
             ];
     
             $result = $conexion->query($phql, $values);
