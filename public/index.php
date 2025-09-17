@@ -13,7 +13,7 @@ use Middleware\JsonMiddleware;
 require_once __DIR__ . '/../vendor/autoload.php';
 
 // Cargar la configuración desde config.php
-$config = require '../config.php';
+$config = require '../app/config.php';
 
 // Crear el contenedor de inyección de dependencias
 $di = new FactoryDefault();

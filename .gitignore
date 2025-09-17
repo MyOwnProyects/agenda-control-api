@@ -2,6 +2,7 @@
 vendor/
 .htaccess
 config.php
+app/config.php
 Ruta inicial vacia.txt
 # Ignorar el archivo de bloqueo de Composer (si decides no incluirlo)
 composer.lock
