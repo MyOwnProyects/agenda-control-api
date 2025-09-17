@@ -1134,4 +1134,51 @@ return function (Micro $app,$di) {
             return $response;
         }
     });
+
+    $app->delete('/ctpacientes/delete', function () use ($app, $db,$request) {
+        try{
+
+            //  REGISTRO A BORRAR
+            $id     = $request->getPost('id_paciente');
+
+            //  SE BUSCA SI EL PACIENTE ESTA COMO ACTIVO
+            $phql   = "SELECT * FROM ctpacientes WHERE id = :id AND estatus = 1";
+            $result = $db->query($phql,array('id' => $id));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result){
+                while($data = $result->fetch()){
+                    throw new Exception('El paciente solo puede ser borrado si esta en estatus de INACTIVO');
+                }
+            }
+
+            //  SE BUSCA SI TIENE CITAS REGISTRADAS
+            $phql   = "SELECT COUNT(*) as registros_historicos FROM tbagenda_citas WHERE id_paciente = :id_paciente";
+            $result = $db->query($phql,array('id_paciente' => $id));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result){
+                while($data = $result->fetch()){
+                    if ($data['registros_historicos'] > 0){
+                        throw new Exception('El paciente cuenta con '.$data['registros_historicos'].' registros de citas, ya sean futuras o historicas.');
+                    }
+                }
+            }
+
+            $phql   = "DELETE FROM ctpacientes WHERE id = :id";
+            $result = $db->execute($phql, array('id' => $id));
+
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
 };
