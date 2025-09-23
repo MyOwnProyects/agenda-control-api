@@ -21,6 +21,8 @@ DECLARE
     v_flag_error_motivo_cancelacion INT;
     v_flag_error_usuario_agenda     INT;
     v_flag_error_fecha_cancelacion  TIMESTAMP;
+    v_clave_motivo_cancelacion      VARCHAR;
+    v_observaciones_cancelacion     TEXT;
 BEGIN
 
     --  VALIDACION DE FECHA DE INICIO
@@ -57,6 +59,10 @@ BEGIN
         FROM tbcitas_programadas a 
         LEFT JOIN ctpacientes b  ON a.id_paciente = b.id 
         WHERE b.estatus = 1 AND a.id_locacion = p_id_locacion;
+
+        --  SE CONSIDERA APERTURA DE AGENDA
+        v_clave_motivo_cancelacion  := 'APA';
+        v_observaciones_cancelacion := 'SE REALIZO UNA NUEVA APERTURA DE AGENDA EN LAS FECHAS DE ESTA CITA';
     ELSE 
         --  SE VERIFICA QUE LAS FECHAS ESTEN EN EL RANGO DE LA APERTURA DE AGENDA
         SELECT fecha_limite INTO fecha_validacion FROM tbapertura_agenda WHERE id_locacion = p_id_locacion ORDER BY fecha_limite DESC LIMIT 1;
@@ -66,6 +72,10 @@ BEGIN
         END IF;
 
         arr_id_paciente := array_append(arr_id_paciente, p_id_paciente);
+
+        --  LA CANCELACION DE CITAS ES POR NUEVA GENERACION DE CITAS
+        v_clave_motivo_cancelacion  := 'NGC';
+        v_observaciones_cancelacion := 'SE GENERARON NUEVAMENTE LAS CITAS DE ESTE PACIENTE DESDE EL CATALOGO';
     END IF;
 
     RAISE NOTICE 'PACIENTES (%)', arr_id_paciente;
@@ -73,14 +83,14 @@ BEGIN
     --  SE CANCELAN TODOS LOS REGISTROS ACTIVOS YA EXISTENTES EN LA AGENDA QUE SEAN DE CITAS PROGRAMADAS
     --  DE LOS PACIENTES QUE ESTEN EN EL RANGO DE FECHAS DE FECHA_INICO Y FECHA_INICIO + V_DIAS
     --DELETE FROM tbagenda_citas WHERE id_paciente = ANY (arr_id_paciente) AND fecha_cita::DATE between p_fecha_inicio and p_fecha_inicio::date + (v_dias || ' days')::interval;
-    SELECT id INTO v_id_motivo_cancelacion FROM ctmotivos_cancelacion_cita WHERE clave = 'APA';
+    SELECT id INTO v_id_motivo_cancelacion FROM ctmotivos_cancelacion_cita WHERE clave = v_clave_motivo_cancelacion;
 
     UPDATE tbagenda_citas SET 
         activa = 0, 
         id_motivo_cancelacion = v_id_motivo_cancelacion, 
         id_usuario_cancelacion = v_id_usuario_agenda, 
         fecha_cancelacion = NOW(),
-        observaciones_cancelacion = 'SE REALIZO UNA NUEVA APERTURA DE AGENDA EN LAS FECHAS DE ESTA CITA'
+        observaciones_cancelacion = v_observaciones_cancelacion
     WHERE id_paciente = ANY (arr_id_paciente) and activa = 1 AND fecha_cita::DATE between p_fecha_inicio and p_fecha_inicio::date + (v_dias || ' days')::interval;
 
     count_pacientes := cardinality(arr_id_paciente);
