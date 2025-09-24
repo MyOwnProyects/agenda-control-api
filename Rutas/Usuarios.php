@@ -264,6 +264,8 @@ return function (Micro $app,$di) {
             if (empty($contrasena)) {
                 throw new Exception('Parámetro "Contrasena" vacío');
             }
+
+            $contrasena = trim($contrasena);
     
             if (empty($primer_apellido)) {
                 throw new Exception('Parámetro "Primer apellido" vacío');
@@ -582,6 +584,64 @@ return function (Micro $app,$di) {
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'ERROR');
+            return $response;
+        }
+    });
+
+    $app->put('/ctusuarios/change_password', function () use ($app, $db,$request) {
+        try{
+            //  SE UTILIZARA UN BORRADO LOGICO PARA EVITAR DEJAR
+            //  A LOS USUARIOS SIN UN TIPO
+            $id_usuario     = $request->getPost('id');
+            $contrasena     = $request->getPost('contrasena');
+
+            if (empty($id_usuario)){
+                throw new Exception('Parametro identificador invalido');
+            }
+
+            if (empty($contrasena)){
+                throw new Exception('Parametro de contrasena vacio');
+            } else {
+                if (strlen(trim($contrasena)) < 8){
+                    throw new Exception('COntraseña invalida');
+                }
+            }
+
+            $hash_contrasena    = hash('sha256', trim($contrasena));
+
+            $phql   = "SELECT * FROM ctusuarios WHERE id = :id_usuario";
+            $result = $db->query($phql, array('id_usuario' => $id_usuario));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $flag_exists    = false;
+            while ($row = $result->fetch()) {
+                $flag_exists    = true;
+                if ($row['estatus'] != 1){
+                    throw new Exception('No se puede modificar la cuenta de un usuario innactivo');
+                }
+            }
+
+            if (!$flag_exists){
+                throw new Exception("Registro inexistente en el catalogo");
+            }
+
+            //  EN CASO DE DESACTIVAR SOLO SE CAMBIA EL ESTATUS DEL REGISTRO
+            $phql   = "UPDATE ctusuarios SET contrasena = :contrasena WHERE id = :id";
+            $result = $db->execute($phql, array(
+                'contrasena'    => $hash_contrasena,
+                'id'            => $id_usuario
+            ));
+
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(401, 'ERROR');
             return $response;
         }
     });
