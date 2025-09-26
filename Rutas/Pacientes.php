@@ -1181,4 +1181,112 @@ return function (Micro $app,$di) {
             return $response;
         }
     });
+
+    $app->get('/ctpacientes/get_digital_record', function () use ($app,$db,$request) {
+        try{
+            //  PARAMETROS
+            $id_paciente    = $request->getQuery('id_paciente');
+            
+            $arr_return = array(
+                'info_paciente' => array()
+            );
+            
+            if ($id_paciente == null && !is_numeric($id_paciente)){
+                throw new Exception("Parametro de id invalido");
+            }
+        
+            // Definir el query SQL
+            $phql   = "SELECT  
+                            a.*,
+                            (a.primer_apellido|| ' ' ||COALESCE(a.segundo_apellido,'')||' '||a.nombre) as nombre_completo,
+                            c.nombre as locacion_registro,
+                            a.fecha_nacimiento,
+                            CASE 
+                                WHEN fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 1, '0')
+                                ELSE NULL
+                            END AS edad_actual
+                        FROM ctpacientes a 
+                        LEFT JOIN ctlocaciones c ON a.id_locacion_registro = c.id
+                        WHERE a.id = :id_paciente ";
+            $values = array();
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
+                $arr_return['info_paciente']    = $row;
+            }
+
+            //  SE BUSCA SI TIENE CITAS PROGRAMADAS
+            $phql   = " SELECT  
+                            d.nombre as nombre_locacion,
+                            (e.primer_apellido|| ' ' ||COALESCE(e.segundo_apellido,'')||' '||e.nombre) as nombre_profesional,
+                            f.clave as clave_servicio,
+                            f.codigo_color,
+                            c.dia,
+                            TO_CHAR(c.hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(c.hora_termino, 'HH24:MI') AS hora_termino
+                        FROM tbcitas_programadas a 
+                        LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
+                        LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
+                        LEFT JOIN ctlocaciones d ON a.id_locacion = d.id
+                        LEFT JOIN ctprofesionales e ON b.id_profesional = e.id
+                        LEFT JOIN ctservicios f ON b.id_servicio = f.id
+
+                        WHERE a.id_paciente = :id_paciente 
+                        ORDER BY c.dia,c.hora_inicio
+                        ";
+
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            while ($row = $result->fetch()) {
+                $arr_return['info_citas_programadas'][] = $row;
+            }
+
+            //  SE BUSCA SI EL PACIENTE TIENE UN DIAGNOSTICO
+            $arr_return['diagnosticos'] = array();
+            $phql   = " SELECT 
+                            a.presento_evidencia,
+                            b.* 
+                        FROM tbpacientes_diagnosticos a
+                        LEFT JOIN cttranstornos_neurodesarrollo b ON a.id_transtorno = b.id
+                        WHERE a.id_paciente = :id_paciente 
+                        ORDER BY b.clave ASC";
+
+            $result_diagnosticos    = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result_diagnosticos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result_diagnosticos){
+                while($data_diagnostico = $result_diagnosticos->fetch()){
+                    $arr_return['diagnosticos'][]   = $data_diagnostico;
+                }
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
 };
