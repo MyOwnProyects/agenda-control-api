@@ -369,9 +369,10 @@ return function (Micro $app,$di) {
             $segundo_apellido   = $request->getPost('segundo_apellido') ?? null;
             $nombre             = $request->getPost('nombre') ?? null;
             $celular            = $request->getPost('celular') ?? null;
-            $id_locacion_registro   = $request->getPost('id_locacion_registro') ?? null;
-            $fecha_nacimiento       = $request->getPost('fecha_nacimiento') ?? null;
-           
+            $fecha_nacimiento   = $request->getPost('fecha_nacimiento') ?? null;
+            $genero             = $request->getPost('genero') ?? null;
+            $correo_electronico = $request->getPost('correo_electronico') ?? null;
+            $direccion          = $request->getPost('direccion') ?? null;
     
             //  VERIFICACION DE PARAMETROS
 
@@ -391,12 +392,12 @@ return function (Micro $app,$di) {
                 throw new Exception('Par&aacute;metro "Celular" vac&iacute;o');
             }
 
-            if (empty($id_locacion_registro)) {
-                throw new Exception('Par&aacute;metro "Locacion" vac&iacute;o');
-            }
-
             if (!FuncionesGlobales::validarTelefono($celular)){
                 throw new Exception('Parámetro "Celular" invalido');
+            }
+
+            if (!empty($correo_electronico) && !FuncionesGlobales::validarCorreo($correo_electronico)){
+                throw new Exception('Parámetro "Correo electronico" invalido.');
             }
     
             // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
@@ -425,7 +426,10 @@ return function (Micro $app,$di) {
                         segundo_apellido = :segundo_apellido,
                         nombre = :nombre,
                         celular = :celular,
-                        fecha_nacimiento = :fecha_nacimiento
+                        fecha_nacimiento = :fecha_nacimiento,
+                        genero = :genero,
+                        correo_electronico = :correo_electronico,
+                        direccion = :direccion
                     WHERE id = :id";
     
             $values = [
@@ -434,7 +438,10 @@ return function (Micro $app,$di) {
                 'nombre'            => $nombre,
                 'celular'           => $celular,
                 'fecha_nacimiento'  => $fecha_nacimiento,
-                'id'                => $id            
+                'genero'            => $genero,
+                'correo_electronico'    => $correo_electronico,
+                'direccion'             => $direccion,
+                'id'                    => $id            
             ];
     
             $result = $db->execute($phql, $values);
