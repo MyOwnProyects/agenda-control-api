@@ -11,30 +11,11 @@ return function (Micro $app,$di) {
     // Obtener el adaptador de base de datos desde el contenedor DI
     $db = $di->get('db');
 
-    $app->post('/tbnotas/create', function () use ($app, $db, $request) {
-        try {
-            
-    
-            // RESPUESTA JSON
-            $response = new Response();
-            $response->setJsonContent(array('MSG' => 'OK'));
-            $response->setStatusCode(200, 'OK');
-            return $response;
-            
-        } catch (\Exception $e) {
-            $conexion->rollback();
-            
-            return (new Response())->setJsonContent([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ])->setStatusCode(400, 'Bad Request');
-        }
-    });
-
     // Ruta principal para obtener todos los usuarios
     $app->get('/tbnotas/count', function () use ($app,$db,$request) {
         try{
             //  PARAMETROS
+            $id_nota        = $request->getQuery('id_nota') ?? null;;
             $id_paciente    = $request->getQuery('id_paciente');
             $id_profesional = $request->getQuery('id_profesional');
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
@@ -43,6 +24,11 @@ return function (Micro $app,$di) {
             $phql   = " SELECT COUNT(*) as num_rows FROM tbnotas a 
                         WHERE 1 = 1 ";
             $values = array();
+
+            if (!empty($id_nota)){
+                $phql           .= " AND a.id = :id_nota ";
+                $values['id_nota']  = $id_nota;
+            }
     
             if (!empty($id_paciente)){
                 $phql           .= " AND id_paciente = :id_paciente ";
@@ -62,8 +48,6 @@ return function (Micro $app,$di) {
                 $phql           .= " AND id_profesional = :id_profesional ";
                 $values['id_profesional']   = $id_profesional;
             }
-
-            $phql   .= " ORDER BY a.fecha_creacion DESC ";
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -97,15 +81,21 @@ return function (Micro $app,$di) {
             $id_paciente    = $request->getQuery('id_paciente');
             $id_profesional = $request->getQuery('id_profesional');
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            $id_nota            = $request->getQuery('id_nota') ?? null;
             
             // Definir el query SQL
             $phql   = " SELECT  
                             a.*,
-                            (d.primer_apellido||' '||COALESCE(d.segundo_apellido,'')||' '||d.nombre) as profesional,
+                            (b.primer_apellido||' '||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_profesional
                         FROM tbnotas a 
                         LEFT JOIN ctprofesionales b ON a.id_profesional = b.id
                         WHERE 1 = 1 ";
             $values = array();
+
+            if (!empty($id_nota)){
+                $phql           .= " AND a.id = :id_nota ";
+                $values['id_nota']  = $id_nota;
+            }
     
             if (!empty($id_paciente)){
                 $phql           .= " AND id_paciente = :id_paciente ";
@@ -139,6 +129,10 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $data = [];
             while ($row = $result->fetch()) {
+                if ($id_nota == null){
+                    $row['texto']   = '';
+                }
+                $row['label_fecha_creacion']    = FuncionesGlobales::formatearFecha($row['fecha_creacion']);
                 $data[] = $row;
             }
     
@@ -155,5 +149,60 @@ return function (Micro $app,$di) {
             return $response;
         }
         
+    });
+
+     $app->post('/tbnotas/create', function () use ($app, $db, $request) {
+        try {
+
+            //  PARAMETROS
+            $id_paciente        = $request->getPost('id_paciente');
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $texto              = $request->getPost('texto');
+            $titulo             = $request->getPost('titulo');
+            $nota_privada       = $request->getPost('nota_privada');
+
+            //  SE BUSCA EL ID_PROFESIONAL DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_profesional = null;
+            while ($row = $result->fetch()) {
+                $id_profesional = $row['id_profesional'];
+            }
+
+            if ($id_profesional == null || !is_numeric($id_profesional)){
+                throw new Exception("Usuario sin registro de profesional");
+            }
+
+            $texto  = FuncionesGlobales::clear_text_html($texto);
+
+            //  SE CREA EL REGISTRO
+            $phql   = "INSERT INTO tbnotas (id_paciente,id_profesional,nota_privada,titulo,texto)
+                        VALUES (:id_paciente,:id_profesional,:nota_privada,:titulo,:texto)";
+
+            $values = array(
+                'id_paciente'       => $id_paciente,
+                'id_profesional'    => $id_profesional,
+                'nota_privada'      => $nota_privada,
+                'titulo'            => $titulo,
+                'texto'             => $texto
+            );
+
+            $result = $db->query($phql,$values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
     });
 };
