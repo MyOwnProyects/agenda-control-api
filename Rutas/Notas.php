@@ -151,7 +151,7 @@ return function (Micro $app,$di) {
         
     });
 
-     $app->post('/tbnotas/create', function () use ($app, $db, $request) {
+    $app->post('/tbnotas/create', function () use ($app, $db, $request) {
         try {
 
             //  PARAMETROS
@@ -190,7 +190,142 @@ return function (Micro $app,$di) {
                 'texto'             => $texto
             );
 
-            $result = $db->query($phql,$values);
+            $result = $db->execute($phql,$values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->put('/tbnotas/update', function () use ($app, $db, $request) {
+        try {
+
+            //  PARAMETROS
+            $id_nota            = $request->getPost('id_nota');
+            $id_paciente        = $request->getPost('id_paciente');
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $texto              = $request->getPost('texto');
+            $titulo             = $request->getPost('titulo');
+            $nota_privada       = $request->getPost('nota_privada');
+
+            //  SE BUSCA EL ID_PROFESIONAL DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_profesional = null;
+            while ($row = $result->fetch()) {
+                $id_profesional = $row['id_profesional'];
+            }
+
+            if ($id_profesional == null || !is_numeric($id_profesional)){
+                throw new Exception("Usuario sin registro de profesional");
+            }
+
+            //  SE BUSCA QUE LA NOTA A EDITAR SEA DEL PROFESIONAL
+            $phql   = "SELECT * FROM tbnotas WHERE id = :id_nota";
+            $result = $db->query($phql,array('id_nota' => $id_nota));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $flag_exist = false;
+            while ($row = $result->fetch()) {
+                $flag_exist = true;
+                if ($row['id_profesional'] != $id_profesional){
+                    throw new Exception("No puedes editar una nota que haya sido creada por otro profesional", 400);   
+                }
+            }
+
+            if (!$flag_exist){
+                throw new Exception("No existe registro de la nota a editar.", 404); 
+            }
+
+            $texto  = FuncionesGlobales::clear_text_html($texto);
+
+            //  SE CREA EL REGISTRO
+            $phql   = "UPDATE tbnotas SET titulo = :titulo, texto = :texto, nota_privada = :nota_privada WHERE id = :id_nota";
+
+            $values = array(
+                'nota_privada'  => $nota_privada,
+                'titulo'        => $titulo,
+                'texto'         => $texto,
+                'id_nota'       => $id_nota
+            );
+
+            $result = $db->execute($phql,$values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->delete('/tbnotas/delete', function () use ($app, $db, $request) {
+        try {
+
+            //  PARAMETROS
+            $id_nota            = $request->getPost('id_nota');
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+
+            //  SE BUSCA EL ID_PROFESIONAL DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_profesional = null;
+            while ($row = $result->fetch()) {
+                $id_profesional = $row['id_profesional'];
+            }
+
+            if ($id_profesional == null || !is_numeric($id_profesional)){
+                throw new Exception("Usuario sin registro de profesional");
+            }
+
+            //  SE BUSCA QUE LA NOTA A EDITAR SEA DEL PROFESIONAL
+            $phql   = "SELECT * FROM tbnotas WHERE id = :id_nota";
+            $result = $db->query($phql,array('id_nota' => $id_nota));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $flag_exist = false;
+            while ($row = $result->fetch()) {
+                $flag_exist = true;
+                if ($row['id_profesional'] != $id_profesional){
+                    throw new Exception("No puedes borrar una nota que haya sido creada por otro profesional", 400);   
+                }
+            }
+
+            if (!$flag_exist){
+                throw new Exception("No existe registro de la nota a borrar.", 404); 
+            }
+
+            //  SE CREA EL REGISTRO
+            $phql   = "DELETE FROM tbnotas WHERE id = :id_nota";
+
+            $values = array(
+                'id_nota'       => $id_nota
+            );
+
+            $result = $db->execute($phql,$values);
     
             // RESPUESTA JSON
             $response = new Response();
