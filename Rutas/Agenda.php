@@ -443,15 +443,22 @@ return function (Micro $app,$di) {
     });
 
     $app->delete('/tbagenda_citas/cancelar_cita', function () use ($app, $db,$request) {
+        $conexion   = $app->db;
         try{
+            $conexion->begin();
 
             $id_agenda_cita         = $request->getPost('id_agenda_cita');
             $id_motivo_cancelacion  = $request->getPost('id_motivo_cancelacion');
             $observaciones_cancelacion  = $request->getPost('observaciones_cancelacion');
             $usuario_solicitud          = $request->getPost('usuario_solicitud');
             $tipo_movimiento            = $request->getPost('tipo_movimiento');
+            $arr_id_agenda_cita         = $request->getPost('arr_id_agenda_cita') ?? array();
 
-            if (empty($id_agenda_cita)){
+            if (!empty($id_agenda_cita)){
+                $arr_id_agenda_cita = array($id_agenda_cita);
+            }
+
+            if (empty($arr_id_agenda_cita) || count($arr_id_agenda_cita) == 0){
                 throw new Exception('Parametro identificar de cita vacio');
             }
 
@@ -472,56 +479,64 @@ return function (Micro $app,$di) {
             }
 
             //  SE VERIFICA QUE LA CITA SE ENCUENTRE ACTIVA
-            $phql   = "SELECT a.*,(CASE WHEN (a.fecha_cita + (h.valor)::integer * INTERVAL '1 day') < NOW()::DATE THEN 1 ELSE 0 END) as vencida  
-                        FROM tbagenda_citas a
-                        LEFT JOIN ctvariables_sistema h ON h.clave = 'dias_movimientos_citas_vencidas'
-                        WHERE a.id = :id_agenda_cita AND (activa = 1 OR fecha_cita < now()::DATE )";
-            
-            $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+            foreach($arr_id_agenda_cita as $id_agenda_cita){
+                $phql   = "SELECT 
+                                a.*,
+                                (CASE WHEN (a.fecha_cita + (h.valor)::integer * INTERVAL '1 day') < NOW()::DATE THEN 1 ELSE 0 END) as vencida,
+                                (i.primer_apellido|| ' ' ||COALESCE(i.segundo_apellido,'')||' '||i.nombre) as nombre_completo
+                            FROM tbagenda_citas a
+                            LEFT JOIN ctvariables_sistema h ON h.clave = 'dias_movimientos_citas_vencidas'
+                            LEFT JOIN ctpacientes i ON a.id_paciente = i.id
+                            WHERE a.id = :id_agenda_cita AND (activa = 1 OR fecha_cita < now()::DATE )";
+                
+                $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
-            $flag_activa    = false;
-            if ($result){
-                while($data = $result->fetch()){
-                    $flag_activa    = true;
+                $flag_activa    = false;
+                if ($result){
+                    while($data = $result->fetch()){
+                        $flag_activa    = true;
 
-                    if ($data['vencida'] == 1){
-                        throw new Exception('La cita ya no se encuentra disponible para realizar la solicitud indicada');
+                        if ($data['vencida'] == 1){
+                            throw new Exception('La cita del día '.$data['fecha_cita'].' del paciente '.$data['nombre_completo'].' ya no se encuentra disponible para realizar la solicitud indicada');
+                        }
                     }
                 }
-            }
 
-            if (!$flag_activa){
-                throw new Exception('la cita ya no se encuentra disponible para realizar la solicitud indicada');
-            }
+                if (!$flag_activa){
+                    throw new Exception('la cita ya no se encuentra disponible para realizar la solicitud indicada');
+                }
 
-            //  ESTATUS DE ACTIVA
-            // 1 CITA ACTIVA Y DISPONIBLE
-            // 0 CITA CANCELADA
-            // 2 CITA PENDIENTE DE AGENDAR
+                //  ESTATUS DE ACTIVA
+                // 1 CITA ACTIVA Y DISPONIBLE
+                // 0 CITA CANCELADA
+                // 2 CITA PENDIENTE DE AGENDAR
+                
+                $activa = $tipo_movimiento == 'cancelar' ? 0 : 2;
+
+                $phql   = " UPDATE tbagenda_citas SET 
+                                activa = :activa,
+                                id_motivo_cancelacion = :id_motivo_cancelacion,
+                                observaciones_cancelacion = :observaciones_cancelacion,
+                                id_usuario_cancelacion = :id_usuario_cancelacion,
+                                fecha_cancelacion = NOW() ";
+                $values = array(
+                    'id'                        => $id_agenda_cita,
+                    'id_motivo_cancelacion'     => $id_motivo_cancelacion,
+                    'observaciones_cancelacion' => $observaciones_cancelacion,
+                    'id_usuario_cancelacion'    => $id_usuario_solicitud,
+                    'activa'                    => $activa
+                );
+
+                if ($tipo_movimiento == 'pendiente'){
+                    $phql   .= ' , asistencia = 0 ';
+                }
+
+                $phql   .= " WHERE id = :id ";
+                $result = $conexion->execute($phql, $values);
+            }
             
-            $activa = $tipo_movimiento == 'cancelar' ? 0 : 2;
-
-            $phql   = " UPDATE tbagenda_citas SET 
-                            activa = :activa,
-                            id_motivo_cancelacion = :id_motivo_cancelacion,
-                            observaciones_cancelacion = :observaciones_cancelacion,
-                            id_usuario_cancelacion = :id_usuario_cancelacion,
-                            fecha_cancelacion = NOW() ";
-            $values = array(
-                'id'                        => $id_agenda_cita,
-                'id_motivo_cancelacion'     => $id_motivo_cancelacion,
-                'observaciones_cancelacion' => $observaciones_cancelacion,
-                'id_usuario_cancelacion'    => $id_usuario_solicitud,
-                'activa'                    => $activa
-            );
-
-            if ($tipo_movimiento == 'pendiente'){
-                $phql   .= ' , asistencia = 0 ';
-            }
-
-            $phql   .= " WHERE id = :id ";
-            $result = $db->execute($phql, $values);
+            $conexion->commit();
 
             // RESPUESTA JSON
             $response = new Response();
@@ -530,6 +545,7 @@ return function (Micro $app,$di) {
             return $response;
 
         }catch (\Exception $e) {
+            $conexion->rollback();
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');
@@ -1033,7 +1049,6 @@ return function (Micro $app,$di) {
             ));
 
         }catch (\Exception $e) { 
-            $conexion->rollback();
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');
@@ -1042,68 +1057,79 @@ return function (Micro $app,$di) {
     });
 
     $app->put('/tbagenda_citas/capturar_pago', function () use ($app, $db, $request) {
+        $conexion = $db; 
         try {
-    
+            $conexion->begin(); 
+            
             // OBTENER DATOS JSON
-            $id_agenda_cita = $request->getPost('id_agenda_cita');
-            $forma_pago     = $request->getPost('forma_pago');
+            $arr_agenda_cita    = $request->getPost('arr_id_agenda_cita') ?? array();
+            $forma_pago         = $request->getPost('forma_pago');
             $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $id_agenda_cita     = $request->getPost('id_agenda_cita');
+
+            if (!empty($id_agenda_cita)){
+                $arr_agenda_cita    = array($id_agenda_cita);
+            }
             
             // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
-            if (empty($id_agenda_cita)) {
+            if (empty($arr_agenda_cita) || count($arr_agenda_cita) == 0) {
                 throw new Exception('Parámetro "ID" vacío');
             }
 
             if (empty($forma_pago)){
                  throw new Exception('Parámetro "Forma de pago" vacío');
             }
-            
-            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
-            $phql = "SELECT * FROM tbagenda_citas 
-                    WHERE id = :id_agenda_cita AND pagada = 1";
-    
-            $values = array(
-                'id_agenda_cita'    => $id_agenda_cita
-            );
 
-            $result = $db->query($phql, $values);
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-    
-            while ($row = $result->fetch()) {
-                throw new Exception('El estatus del pago ha sido modificado previamente, te sugerimos refrescar la vista.');
-            }
+            foreach($arr_agenda_cita as $id_agenda_cita){
+                // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
+                $phql = "SELECT * FROM tbagenda_citas 
+                        WHERE id = :id_agenda_cita AND pagada = 1";
+        
+                $values = array(
+                    'id_agenda_cita'    => $id_agenda_cita
+                );
 
-            //  SE BUSCA EL ID DEL USUARIO
-            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
-            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-
-            $id_usuario_solicitud   = null;
-            if ($result){
-                while($data = $result->fetch()){
-                    $id_usuario_solicitud   = $data['id'];
+                $result = $db->query($phql, $values);
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                while ($row = $result->fetch()) {
+                    throw new Exception('El estatus del pago ha sido modificado previamente, te sugerimos refrescar la vista.');
                 }
-            }
 
-            if ($id_usuario_solicitud == null){
-                throw new Exception('Usuario inexistente en el catalogo');
+                //  SE BUSCA EL ID DEL USUARIO
+                $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+                $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                $id_usuario_solicitud   = null;
+                if ($result){
+                    while($data = $result->fetch()){
+                        $id_usuario_solicitud   = $data['id'];
+                    }
+                }
+
+                if ($id_usuario_solicitud == null){
+                    throw new Exception('Usuario inexistente en el catalogo');
+                }
+        
+                // INSERTAR NUEVO servicio
+                $phql = "UPDATE tbagenda_citas SET
+                                pagada = 1,
+                                fecha_pago = NOW(),
+                                id_usuario_pago = :id_usuario_solicitud,
+                                forma_pago = :forma_pago
+                        WHERE id = :id_agenda_cita ";
+        
+                $values = [
+                    'id_agenda_cita'        => $id_agenda_cita,
+                    'id_usuario_solicitud'  => $id_usuario_solicitud,
+                    'forma_pago'            => $forma_pago
+                ];
+        
+                $result = $conexion->execute($phql, $values);
             }
-    
-            // INSERTAR NUEVO servicio
-            $phql = "UPDATE tbagenda_citas SET
-                            pagada = 1,
-                            fecha_pago = NOW(),
-                            id_usuario_pago = :id_usuario_solicitud,
-                            forma_pago = :forma_pago
-                    WHERE id = :id_agenda_cita ";
-    
-            $values = [
-                'id_agenda_cita'        => $id_agenda_cita,
-                'id_usuario_solicitud'  => $id_usuario_solicitud,
-                'forma_pago'            => $forma_pago
-            ];
-    
-            $result = $db->execute($phql, $values);
+            
+            $conexion->commit();
     
             // RESPUESTA JSON
             $response = new Response();
@@ -1112,6 +1138,7 @@ return function (Micro $app,$di) {
             return $response;
             
         } catch (\Exception $e) { 
+            $conexion->rollback();
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');
