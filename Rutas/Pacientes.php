@@ -1192,10 +1192,12 @@ return function (Micro $app,$di) {
     $app->get('/ctpacientes/get_digital_record', function () use ($app,$db,$request) {
         try{
             //  PARAMETROS
-            $id_paciente    = $request->getQuery('id_paciente');
+            $id_paciente        = $request->getQuery('id_paciente');
+            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
             
             $arr_return = array(
-                'info_paciente' => array()
+                'info_paciente' => array(),
+                'citas_activas' => 0
             );
             
             if ($id_paciente == null && !is_numeric($id_paciente)){
@@ -1279,6 +1281,49 @@ return function (Micro $app,$di) {
             if ($result_diagnosticos){
                 while($data_diagnostico = $result_diagnosticos->fetch()){
                     $arr_return['diagnosticos'][]   = $data_diagnostico;
+                }
+            }
+
+            //  EL USUARIO TIENE AL MENOS UNA CITA ACTIVA O AL MENOS CITA PROGRAMADA CAPTURADA,
+            //  DE NO SER ASI NO PODRA ACCEDER A VER SUS NOTAS
+            //  SE BUSCA EL ID_PROFESIONAL DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_profesional = null;
+            while ($row = $result->fetch()) {
+                $id_profesional = $row['id_profesional'];
+            }
+
+            if ($id_profesional != null){
+                $phql   = " SELECT 
+                                1 as flag_cita 
+                            FROM tbagenda_citas 
+                            WHERE id_paciente = :id_paciente AND id_profesional = :id_profesional
+                            AND activa <> 0
+                            
+                            UNION 
+                            
+                            SELECT 
+                                1 as flag_cita 
+                            FROM tbcitas_programadas a 
+                            LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
+                            WHERE a.id_paciente = :id_paciente AND b.id_profesional = :id_profesional
+                            ";
+            
+                $result_diagnosticos    = $db->query($phql,array(
+                    'id_paciente'       => $id_paciente,
+                    'id_profesional'    => $id_profesional
+                ));
+                $result_diagnosticos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result_diagnosticos){
+                    while($data_diagnostico = $result_diagnosticos->fetch()){
+                        $arr_return['citas_activas']    = 1;
+                        break;
+                    }
                 }
             }
     

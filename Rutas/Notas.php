@@ -15,7 +15,7 @@ return function (Micro $app,$di) {
     $app->get('/tbnotas/count', function () use ($app,$db,$request) {
         try{
             //  PARAMETROS
-            $id_nota        = $request->getQuery('id_nota') ?? null;;
+            $id_nota        = $request->getQuery('id_nota') ?? null;
             $id_paciente    = $request->getQuery('id_paciente');
             $id_profesional = $request->getQuery('id_profesional');
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
