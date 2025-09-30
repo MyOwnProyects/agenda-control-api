@@ -443,7 +443,7 @@ return function (Micro $app,$di) {
     });
 
     $app->delete('/tbagenda_citas/cancelar_cita', function () use ($app, $db,$request) {
-        $conexion   = $app->db;
+        $conexion   = $db;
         try{
             $conexion->begin();
 
