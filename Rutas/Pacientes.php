@@ -1197,7 +1197,8 @@ return function (Micro $app,$di) {
             
             $arr_return = array(
                 'info_paciente' => array(),
-                'citas_activas' => 0
+                'citas_activas' => 0,
+                'areas_enfoque' => array()
             );
             
             if ($id_paciente == null && !is_numeric($id_paciente)){
@@ -1326,6 +1327,36 @@ return function (Micro $app,$di) {
                     }
                 }
             }
+
+            //  AREAS DE ENFOQUE
+            $phql   = " SELECT 
+                            b.id as id_subarea_enfoque,
+                            b.nombre as nombre_subarea,
+                            c.clave,
+                            c.nombre as nombre_area,
+                            a.id_profesional_registro 
+                        FROM tbpacientes_areas_refuerzo a
+                        LEFT JOIN ctareas_enfoque_subarea b ON a.id_subarea_enfoque = b.id
+                        LEFT JOIN ctareas_enfoque c ON b.id_area_enfoque = c.id
+                        WHERE a.id_paciente = :id_paciente
+                        ORDER BY c.clave,b.nombre";
+
+            $result_engoque = $db->query($phql,array(
+                'id_paciente'       => $id_paciente
+            ));
+            $result_engoque->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result_engoque){
+                while($data_enfoque = $result_engoque->fetch()){
+                    if (!isset($arr_return['areas_enfoque'][$data_enfoque['clave']])){
+                        $arr_return['areas_enfoque'][$data_enfoque['clave']]['info']    = array(
+                            'nombre'    => $data_enfoque['nombre_area']
+                        );
+                    }
+
+                    $arr_return['areas_enfoque'][$data_enfoque['clave']]['subarea'][]   = $data_enfoque; 
+                }
+            }
     
             // Devolver los datos en formato JSON
             $response = new Response();
@@ -1333,6 +1364,113 @@ return function (Micro $app,$di) {
             $response->setStatusCode(200, 'OK');
             return $response;
         }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    $app->get('/ctareas_enfoque/show', function () use ($app,$db,$request) {
+        try{
+            // Ejecutar el query y obtener el resultado
+            $phql   = " SELECT 
+                            a.*, 
+                            b.id as id_subarea_enfoque,
+                            b.nombre as nombre_subarea
+                        FROM ctareas_enfoque a  
+                        LEFT JOIN ctareas_enfoque_subarea b ON a.id = b.id_area_enfoque
+                        ORDER BY a.nombre ASC,b.nombre";
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $arr_return = array();
+            while ($row = $result->fetch()) {
+                if (!isset($arr_return[$row['clave']])){
+                    $arr_return[$row['clave']]['info']  = array(
+                        'clave'         => $row['clave'],
+                        'nombre'        => $row['nombre'],
+                        'descripcion'   => $row['descripcion'],
+                    );
+                }
+
+                $arr_return[$row['clave']]['subarea'][] = array(
+                    'id_subarea_enfoque'    => $row['id_subarea_enfoque'],
+                    'nombre'                => $row['nombre_subarea'],
+                );
+                
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    $app->post('/ctpacientes/save_subareas_focus', function () use ($app,$db,$request) {
+        $conexion = $db; 
+        try {
+            $conexion->begin();
+    
+            //  OBTENER PARAMETROS
+            $id_paciente    = $app->request->getPost('id_paciente') ?? null;
+            $obj_info       = $app->request->getPost('obj_info') ?? array();
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_profesional = null;
+            while ($row = $result->fetch()) {
+                $id_profesional = $row['id_profesional'];
+            }
+
+            if ($id_profesional == null){
+                throw new Exception("Solo los profesionales pueden capturar este registro", 401);
+            }
+
+            //  SE BORRAN TODOS LOS REGISTROS DEL PACIENTE Y PROFESIONAL
+            $phql   = "DELETE FROM tbpacientes_areas_refuerzo WHERE id_paciente = :id_paciente AND id_profesional_registro = :id_profesional";
+            $result = $conexion->execute($phql,array(
+                'id_paciente'       => $id_paciente,
+                'id_profesional'    => $id_profesional,
+            ));
+
+            //  SE CREAN LOS NUEVOS REGISTROS
+            $phql   = "INSERT INTO tbpacientes_areas_refuerzo (id_paciente,id_profesional_registro,id_subarea_enfoque)
+                        VALUES (:id_paciente,:id_profesional,:id_subarea_enfoque)";
+
+            foreach($obj_info as $id_subarea_enfoque){
+                $result = $conexion->execute($phql,array(
+                    'id_paciente'           => $id_paciente,
+                    'id_profesional'        => $id_profesional,
+                    'id_subarea_enfoque'    => $id_subarea_enfoque
+                ));
+            }
+            
+            $conexion->commit();
+
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            $conexion->rollback();
             // Devolver los datos en formato JSON
             $response = new Response();
             $response->setJsonContent($e->getMessage());
