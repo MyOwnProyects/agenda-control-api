@@ -1198,7 +1198,8 @@ return function (Micro $app,$di) {
             $arr_return = array(
                 'info_paciente' => array(),
                 'citas_activas' => 0,
-                'areas_enfoque' => array()
+                'areas_enfoque' => array(),
+                'info_citas_programadas'    => array()
             );
             
             if ($id_paciente == null && !is_numeric($id_paciente)){
@@ -1250,7 +1251,7 @@ return function (Micro $app,$di) {
                         LEFT JOIN ctprofesionales e ON b.id_profesional = e.id
                         LEFT JOIN ctservicios f ON b.id_servicio = f.id
 
-                        WHERE a.id_paciente = :id_paciente 
+                        WHERE a.id_paciente = :id_paciente AND b.id IS NOT NULL
                         ORDER BY c.dia,c.hora_inicio
                         ";
 
