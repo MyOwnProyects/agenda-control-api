@@ -1080,6 +1080,25 @@ return function (Micro $app,$di) {
                  throw new Exception('Parámetro "Forma de pago" vacío');
             }
 
+            //  SE BUSCA EL ID DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
+            }
+
+            if ($id_usuario_solicitud == null){
+                throw new Exception('Usuario inexistente en el catalogo');
+            }
+
+            //  SE VERIFICA QUE SE PAGEN TODAS LAS CITAS DEUDORAS DEL PACIENTE EN EL ORDEN
+            //  REQUERIDO
+
             foreach($arr_agenda_cita as $id_agenda_cita){
                 // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
                 $phql = "SELECT * FROM tbagenda_citas 
@@ -1096,20 +1115,32 @@ return function (Micro $app,$di) {
                     throw new Exception('El estatus del pago ha sido modificado previamente, te sugerimos refrescar la vista.');
                 }
 
-                //  SE BUSCA EL ID DEL USUARIO
-                $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
-                $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+                //  EN BASE AL ID PACIENTE, SE BUSCA LA CITA MAS ANTIGUA VIGENTE SIN PAGAR
+                //  SI EL ID NO CONCUERDA ARROJARA ERROR
+                $phql   = " SELECT 
+                                a.id as id_agenda_cita,
+                                (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
+                                a.fecha_cita,
+                                TO_CHAR(a.hora_inicio, 'HH24:MI') AS hora_inicio,
+                                TO_CHAR(a.hora_termino, 'HH24:MI') AS hora_termino
+                            FROM tbagenda_citas a
+                            LEFT JOIN ctpacientes b ON a.id_paciente = b.id
+                            WHERE EXISTS (
+                                SELECT 1 FROM tbagenda_citas t1 
+                                WHERE t1.id = :id_agenda_cita AND a.id_paciente = t1.id_paciente
+                                AND a.fecha_cita <= t1.fecha_cita AND a.hora_inicio <= t1.hora_inicio
+                            ) AND a.activa = 1 AND a.pagada = 0  
+                            ORDER BY a.fecha_cita ASC, a.hora_inicio ASC LIMIT 1";
+
+                $result = $db->query($phql, array(
+                    'id_agenda_cita'    => $id_agenda_cita
+                ));
                 $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-
-                $id_usuario_solicitud   = null;
-                if ($result){
-                    while($data = $result->fetch()){
-                        $id_usuario_solicitud   = $data['id'];
+        
+                while ($data = $result->fetch()) {
+                    if ($data['id_agenda_cita'] != $id_agenda_cita){
+                        throw new Exception("El paciente: ".$data['nombre_completo'].' presenta un adeudo en la cita anterir a la que se desea pagar, la cual es del día '.FuncionesGlobales::formatearFecha($data['fecha_cita']).' de '.$data['hora_inicio'].' a '.$data['hora_termino'] , 401);
                     }
-                }
-
-                if ($id_usuario_solicitud == null){
-                    throw new Exception('Usuario inexistente en el catalogo');
                 }
         
                 // INSERTAR NUEVO servicio
