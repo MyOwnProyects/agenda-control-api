@@ -82,13 +82,28 @@ return function (Micro $app,$di) {
             $id_profesional = $request->getQuery('id_profesional');
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
             $id_nota            = $request->getQuery('id_nota') ?? null;
+
+            $dias_semana = [
+                1 => 'Lunes',
+                2 => 'Martes',
+                3 => 'Miércoles',
+                4 => 'Jueves',
+                5 => 'Viernes',
+                6 => 'Sábado', 
+                7 => 'Domingo'
+            ];
             
             // Definir el query SQL
             $phql   = " SELECT  
                             a.*,
-                            (b.primer_apellido||' '||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_profesional
+                            (b.primer_apellido||' '||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_profesional,
+                            c.fecha_cita,
+                            c.dia,
+                            TO_CHAR(c.hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(c.hora_termino, 'HH24:MI') AS hora_termino
                         FROM tbnotas a 
                         LEFT JOIN ctprofesionales b ON a.id_profesional = b.id
+                        LEFT JOIN tbagenda_citas c ON a.id_agenda_cita = c.id
                         WHERE 1 = 1 ";
             $values = array();
 
@@ -98,7 +113,7 @@ return function (Micro $app,$di) {
             }
     
             if (!empty($id_paciente)){
-                $phql           .= " AND id_paciente = :id_paciente ";
+                $phql           .= " AND a.id_paciente = :id_paciente ";
                 $values['id_paciente']  = $id_paciente;
             }
 
@@ -132,7 +147,10 @@ return function (Micro $app,$di) {
                 if ($id_nota == null){
                     $row['texto']   = '';
                 }
+                $row['fecha_cita']              = FuncionesGlobales::formatearFecha($row['fecha_cita']);
                 $row['label_fecha_creacion']    = FuncionesGlobales::formatearFecha($row['fecha_creacion']);
+                $row['label_titulo']            = '📝 ' . $row['titulo'];
+                $row['dia']                     = !empty($row['dia']) ? $dias_semana[$row['dia']] : null;
                 $data[] = $row;
             }
     
@@ -160,6 +178,7 @@ return function (Micro $app,$di) {
             $texto              = $request->getPost('texto');
             $titulo             = $request->getPost('titulo');
             $nota_privada       = $request->getPost('nota_privada');
+            $id_agenda_cita     = $request->getPost('id_agenda_cita') ?? null;
 
             //  SE BUSCA EL ID_PROFESIONAL DEL USUARIO
             $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
@@ -179,12 +198,13 @@ return function (Micro $app,$di) {
             $texto  = FuncionesGlobales::clear_text_html($texto);
 
             //  SE CREA EL REGISTRO
-            $phql   = "INSERT INTO tbnotas (id_paciente,id_profesional,nota_privada,titulo,texto)
-                        VALUES (:id_paciente,:id_profesional,:nota_privada,:titulo,:texto)";
+            $phql   = "INSERT INTO tbnotas (id_paciente,id_profesional,id_agenda_cita,nota_privada,titulo,texto)
+                        VALUES (:id_paciente,:id_profesional,:id_agenda_cita,:nota_privada,:titulo,:texto)";
 
             $values = array(
                 'id_paciente'       => $id_paciente,
                 'id_profesional'    => $id_profesional,
+                'id_agenda_cita'    => $id_agenda_cita,
                 'nota_privada'      => $nota_privada,
                 'titulo'            => $titulo,
                 'texto'             => $texto

@@ -1192,7 +1192,8 @@ return function (Micro $app,$di) {
     $app->get('/ctpacientes/get_digital_record', function () use ($app,$db,$request) {
         try{
             //  PARAMETROS
-            $id_paciente        = $request->getQuery('id_paciente');
+            $id_paciente        = $request->getQuery('id_paciente') ?? null;
+            $id_agenda_cita     = $request->getQuery('id_agenda_cita') ?? null;
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
             
             $arr_return = array(
@@ -1202,8 +1203,25 @@ return function (Micro $app,$di) {
                 'info_citas_programadas'    => array()
             );
             
-            if ($id_paciente == null && !is_numeric($id_paciente)){
+            if (empty($id_paciente) && empty($id_agenda_cita)){
                 throw new Exception("Parametro de id invalido");
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita";
+                $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                // Recorrer los resultados
+                $flag_exists    = false;
+                while ($row = $result->fetch()) {
+                    $flag_exists    = true;
+                    $id_paciente    = $row['id_paciente'];
+                }
+
+                if (!$flag_exists){
+                    throw new Exception("Cita inexistente en la agenda", 404);
+                }
             }
         
             // Definir el query SQL
