@@ -8,6 +8,7 @@ class FuncionesGlobales {
     }
 
     public static function formatearFecha($fecha) {
+        if(empty($fecha)) return '';
         return date("d/m/Y", strtotime($fecha));
     }
 

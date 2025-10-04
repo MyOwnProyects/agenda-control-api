@@ -149,7 +149,7 @@ return function (Micro $app,$di) {
                 }
                 $row['fecha_cita']              = FuncionesGlobales::formatearFecha($row['fecha_cita']);
                 $row['label_fecha_creacion']    = FuncionesGlobales::formatearFecha($row['fecha_creacion']);
-                $row['label_titulo']            = '📝 ' . $row['titulo'];
+                $row['label_titulo']            = $row['id_agenda_cita'] != null ? '📝 ' . $row['titulo'] : $row['titulo'];
                 $row['dia']                     = !empty($row['dia']) ? $dias_semana[$row['dia']] : null;
                 $data[] = $row;
             }
@@ -204,7 +204,7 @@ return function (Micro $app,$di) {
             $values = array(
                 'id_paciente'       => $id_paciente,
                 'id_profesional'    => $id_profesional,
-                'id_agenda_cita'    => $id_agenda_cita,
+                'id_agenda_cita'    => empty($id_agenda_cita) ? null : $id_agenda_cita,
                 'nota_privada'      => $nota_privada,
                 'titulo'            => $titulo,
                 'texto'             => $texto
