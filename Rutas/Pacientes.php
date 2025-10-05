@@ -117,6 +117,7 @@ return function (Micro $app,$di) {
             $id_locacion_registro   = $request->getQuery('id_locacion_registro');
             $usuario_solicitud      = $request->getQuery('usuario_solicitud');
             $get_diagnoses          = $request->getQuery('get_diagnoses') ?? null;
+            $id_agenda_cita         = $request->getQuery('id_agenda_cita') ?? null;
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -151,6 +152,14 @@ return function (Micro $app,$di) {
             if (is_numeric($id)){
                 $phql           .= " AND a.id = :id";
                 $values['id']   = $id;
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   .= ' AND EXISTS (
+                                SELECT 1 FROM tbagenda_citas tac 
+                                WHERE tac.id = :id_agenda_cita AND tac.id_paciente = a.id 
+                            )';
+                $values['id_agenda_cita']   = $id_agenda_cita;
             }
 
             if (!empty($clave) && (empty($accion) || $accion != 'login')) {
