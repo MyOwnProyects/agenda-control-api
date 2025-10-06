@@ -1074,8 +1074,8 @@ return function (Micro $app,$di) {
             $conexion->begin();
     
             //  OBTENER PARAMETROS
-            $id_paciente    = $app->request->getPost('id_paciente') ?? null;
-            $obj_info       = $app->request->getPost('obj_info') ?? null;
+            $id_paciente    = $request->getPost('id_paciente') ?? null;
+            $obj_info       = $request->getPost('obj_info') ?? null;
             $usuario_solicitud  = $request->getPost('usuario_solicitud');
 
             if (empty($id_paciente)){
@@ -1453,8 +1453,8 @@ return function (Micro $app,$di) {
             $conexion->begin();
     
             //  OBTENER PARAMETROS
-            $id_paciente    = $app->request->getPost('id_paciente') ?? null;
-            $obj_info       = $app->request->getPost('obj_info') ?? array();
+            $id_paciente    = $request->getPost('id_paciente') ?? null;
+            $obj_info       = $request->getPost('obj_info') ?? array();
             $usuario_solicitud  = $request->getPost('usuario_solicitud');
 
             $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
@@ -1507,4 +1507,218 @@ return function (Micro $app,$di) {
         }
         
     });
+
+    $app->post('/ctpacientes/save_exploracion_fisica', function () use ($app,$db,$request) {
+        try {
+    
+            //  OBTENER PARAMETROS
+            $id_paciente    = $request->getPost('id_paciente') ?? null;
+            $id_agenda_cita = $request->getPost('id_agenda_cita') ?? null;
+            $obj_info       = $request->getPost('obj_info') ?? array();
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $imc                = null;
+
+            if (empty($id_paciente) && empty($id_agenda_cita)){
+                throw new Exception("Parametro de id invalido");
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita";
+                $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                // Recorrer los resultados
+                $flag_exists    = false;
+                while ($row = $result->fetch()) {
+                    $flag_exists    = true;
+                    $id_paciente    = $row['id_paciente'];
+                }
+
+                if (!$flag_exists){
+                    throw new Exception("Cita inexistente en la agenda", 404);
+                }
+            }
+
+            if (isset($obj_info['peso']) && isset($obj_info['altura'])){
+                $imc    = FuncionesGlobales::calcularIMC($obj_info['peso'],$obj_info['altura']);
+            }
+
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_profesional = null;
+            while ($row = $result->fetch()) {
+                $id_profesional = $row['id_profesional'];
+            }
+
+            //  SI EXISTEN REGISTROS CAPTURADOS DEBE DE SER UNA EDICION
+            $phql   = "SELECT * FROM tbexploracion_fisica WHERE id_agenda_cita = :id_agenda_cita";
+            $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $flag_exists    = false;
+            while ($row = $result->fetch()) {
+                $flag_exists    = true;
+                //  SE HACE EL UPDATE
+                $phql   = "UPDATE tbexploracion_fisica SET 
+                                peso = :peso,
+                                altura = :altura,
+                                imc = :imc,
+                                temperatura = :temperatura,
+                                frecuencia_cardiaca = :frecuencia_cardiaca,
+                                frecuencia_respiratoria = :frecuencia_respiratoria,
+                                presion_arterial_sistolica = :presion_arterial_sistolica,
+                                presion_arterial_diastolica = :presion_arterial_diastolica,
+                                saturacion_oxigeno = :saturacion_oxigeno,
+                                observaciones = :observaciones
+                            WHERE id = :id";
+                
+                $values = array(
+                    'peso'                          => isset($obj_info['peso']) ? $obj_info['peso'] : null,
+                    'altura'                        => isset($obj_info['altura']) ? $obj_info['altura'] : null,
+                    'imc'                           => $imc,
+                    'temperatura'                   => isset($obj_info['temperatura']) ? $obj_info['temperatura'] : null,
+                    'frecuencia_cardiaca'           => isset($obj_info['frecuencia_cardiaca']) ? $obj_info['frecuencia_cardiaca'] : null,
+                    'frecuencia_respiratoria'       => isset($obj_info['frecuencia_respiratoria']) ? $obj_info['frecuencia_respiratoria'] : null,
+                    'presion_arterial_sistolica'    => isset($obj_info['presion_arterial_sistolica']) ? $obj_info['presion_arterial_sistolica'] : null,
+                    'presion_arterial_diastolica'   => isset($obj_info['presion_arterial_diastolica']) ? $obj_info['presion_arterial_diastolica'] : null,
+                    'saturacion_oxigeno'            => isset($obj_info['saturacion_oxigeno']) ? $obj_info['saturacion_oxigeno'] : null,
+                    'observaciones'                 => isset($obj_info['observaciones']) ? $obj_info['observaciones'] : null,
+                    'id'                            => $row['id']
+                );
+
+                $result = $db->query($phql,$values);
+
+            }
+
+            //  SE HACE EL INSERT
+            if (!$flag_exists){
+                $phql   = "INSERT INTO tbexploracion_fisica (
+                                id_paciente,
+                                id_agenda_cita,
+                                peso,
+                                altura,
+                                imc,
+                                temperatura,
+                                frecuencia_cardiaca,
+                                frecuencia_respiratoria,
+                                presion_arterial_sistolica,
+                                presion_arterial_diastolica,
+                                saturacion_oxigeno,
+                                observaciones,
+                                id_profesional_registro
+                            )
+                            VALUES (
+                                :id_paciente,
+                                :id_agenda_cita,
+                                :peso,
+                                :altura,
+                                :imc,
+                                :temperatura,
+                                :frecuencia_cardiaca,
+                                :frecuencia_respiratoria,
+                                :presion_arterial_sistolica,
+                                :presion_arterial_diastolica,
+                                :saturacion_oxigeno,
+                                :observaciones,
+                                :id_profesional_registro
+                            )";
+                
+                $values = array(
+                    'id_paciente'                   => $id_paciente,
+                    'id_agenda_cita'                => $id_agenda_cita,
+                    'peso'                          => isset($obj_info['peso']) ? $obj_info['peso'] : null,
+                    'altura'                        => isset($obj_info['altura']) ? $obj_info['altura'] : null,
+                    'imc'                           => $imc,
+                    'temperatura'                   => isset($obj_info['temperatura']) ? $obj_info['temperatura'] : null,
+                    'frecuencia_cardiaca'           => isset($obj_info['frecuencia_cardiaca']) ? $obj_info['frecuencia_cardiaca'] : null,
+                    'frecuencia_respiratoria'       => isset($obj_info['frecuencia_respiratoria']) ? $obj_info['frecuencia_respiratoria'] : null,
+                    'presion_arterial_sistolica'    => isset($obj_info['presion_arterial_sistolica']) ? $obj_info['presion_arterial_sistolica'] : null,
+                    'presion_arterial_diastolica'   => isset($obj_info['presion_arterial_diastolica']) ? $obj_info['presion_arterial_diastolica'] : null,
+                    'saturacion_oxigeno'            => isset($obj_info['saturacion_oxigeno']) ? $obj_info['saturacion_oxigeno'] : null,
+                    'observaciones'                 => isset($obj_info['observaciones']) ? $obj_info['observaciones'] : null,
+                    'id_profesional_registro'       => $id_profesional
+                );
+
+                $result = $db->query($phql,$values);
+            }
+
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    // Ruta principal para obtener todos los usuarios
+    $app->get('/ctpacientes/show_exploracion_clinica', function () use ($app,$db,$request) {
+        try{
+            //  PARAMETROS
+            $id_paciente        = $request->getQuery('id_paciente');
+            $id_profesional     = $request->getQuery('id_profesional');
+            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            $id_agenda_cita     = $request->getQuery('id_agenda_cita') ?? null;
+            
+            // Definir el query SQL
+            $phql   = " SELECT  
+                            a.*
+                        FROM tbexploracion_fisica a 
+                        LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
+                        WHERE 1 = 1 ";
+            $values = array();
+
+            if (!empty($id_agenda_cita)){
+                $phql           .= " AND a.id_agenda_cita = :id_agenda_cita ";
+                $values['id_agenda_cita']   = $id_agenda_cita;
+            }
+    
+            if (!empty($id_paciente)){
+                $phql           .= " AND (a.id_paciente = :id_paciente OR b.id_paciente = :id_paciente)";
+                $values['id_paciente']  = $id_paciente;
+            }
+
+            $phql   .= " ORDER BY a.fecha_registro DESC ";
+
+            if ($request->hasQuery('offset')){
+                $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
+            }
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $data = [];
+            while ($row = $result->fetch()) {
+                $row['fecha_registro']  = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                $data[] = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'Created');
+            return $response;
+        }
+        
+    });
+
+    
 };

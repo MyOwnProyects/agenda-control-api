@@ -7,9 +7,10 @@ class FuncionesGlobales {
         return mb_strtolower($string, 'UTF-8');
     }
 
-    public static function formatearFecha($fecha) {
+    public static function formatearFecha($fecha,$formato_retorno = null) {
         if(empty($fecha)) return '';
-        return date("d/m/Y", strtotime($fecha));
+        $formato_retorno    = $formato_retorno != null ? $formato_retorno : "d/m/Y";
+        return date($formato_retorno, strtotime($fecha));
     }
 
     public static function validarCorreo($correo) {
@@ -143,5 +144,28 @@ class FuncionesGlobales {
         
         // 8. Limpiar espacios extra y retornar
         return trim(preg_replace('/\s+/', ' ', $html));
+    }
+
+    /**
+     * Calcula el Índice de Masa Corporal (IMC).
+     *
+     * @param float $peso   Peso en kilogramos (kg).
+     * @param float $altura Altura en centímetros (cm).
+     * @return float        IMC redondeado a 2 decimales.
+     */
+    public static function calcularIMC($peso, $altura) {
+        // Validar que sean valores positivos
+        if ($peso <= 0 || $altura <= 0 || empty($peso) || empty($altura)) {
+            return null;
+        }
+
+        // Convertir altura de centímetros a metros
+        $alturaMetros = $altura / 100;
+
+        // Calcular IMC
+        $imc = $peso / pow($alturaMetros, 2);
+
+        // Retornar con 2 decimales
+        return round($imc, 2);
     }
 }
