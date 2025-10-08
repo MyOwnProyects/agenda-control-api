@@ -1508,6 +1508,122 @@ return function (Micro $app,$di) {
         
     });
 
+    $app->get('/ctpacientes/get_clinical_data', function () use ($app,$db,$request) {
+        try{
+            //  PARAMETROS
+            $id_paciente        = $request->getQuery('id_paciente') ?? null;
+            $id_agenda_cita     = $request->getQuery('id_agenda_cita') ?? null;
+            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            
+            $arr_return = array(
+                'info_paciente'         => array(),
+                'motivo_consulta'       => array(),
+                'exploracion_fisica'    => array()
+            );
+            
+            if (empty($id_paciente) && empty($id_agenda_cita)){
+                throw new Exception("Parametro de id invalido");
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita";
+                $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                // Recorrer los resultados
+                $flag_exists    = false;
+                while ($row = $result->fetch()) {
+                    $flag_exists    = true;
+                    $id_paciente    = $row['id_paciente'];
+                }
+
+                if (!$flag_exists){
+                    throw new Exception("Cita inexistente en la agenda", 404);
+                }
+            }
+        
+            // Definir el query SQL
+            $phql   = "SELECT  
+                            a.*,
+                            (a.primer_apellido|| ' ' ||COALESCE(a.segundo_apellido,'')||' '||a.nombre) as nombre_completo,
+                            c.nombre as locacion_registro,
+                            a.fecha_nacimiento,
+                            CASE 
+                                WHEN fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 1, '0')
+                                ELSE NULL
+                            END AS edad_actual
+                        FROM ctpacientes a 
+                        LEFT JOIN ctlocaciones c ON a.id_locacion_registro = c.id
+                        WHERE a.id = :id_paciente ";
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
+                $arr_return['info_paciente']    = $row;
+            }
+
+            //  MOTIVOS DE CONSULTA
+            $phql   = " SELECT  
+                            a.*
+                        FROM tbmotivo_consulta a 
+                        LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
+                        WHERE a.id_agenda_cita = :id_agenda_cita ";
+
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,array(
+                'id_agenda_cita'    => $id_agenda_cita
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $row['fecha_registro']              = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                $arr_return['motivo_consulta'][]    = $row;
+            }
+
+            //  EXPLORACION FISICA
+            $phql   = " SELECT  
+                            a.*
+                        FROM tbexploracion_fisica a 
+                        LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
+                        WHERE a.id_agenda_cita = :id_agenda_cita";
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,array(
+                'id_agenda_cita'    => $id_agenda_cita
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while ($row = $result->fetch()) {
+                $row['fecha_registro']              = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                $arr_return['exploracion_fisica'][] = $row;
+            }
+
+            return json_encode($arr_return);
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'Created');
+            return $response;
+        }
+        
+    });
+
     $app->post('/ctpacientes/save_exploracion_fisica', function () use ($app,$db,$request) {
         try {
     
@@ -1662,7 +1778,7 @@ return function (Micro $app,$di) {
     });
 
     // Ruta principal para obtener todos los usuarios
-    $app->get('/ctpacientes/show_exploracion_clinica', function () use ($app,$db,$request) {
+    $app->get('/ctpacientes/show_exploracion_fisica', function () use ($app,$db,$request) {
         try{
             //  PARAMETROS
             $id_paciente        = $request->getQuery('id_paciente');
@@ -1674,6 +1790,64 @@ return function (Micro $app,$di) {
             $phql   = " SELECT  
                             a.*
                         FROM tbexploracion_fisica a 
+                        LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
+                        WHERE 1 = 1 ";
+            $values = array();
+
+            if (!empty($id_agenda_cita)){
+                $phql           .= " AND a.id_agenda_cita = :id_agenda_cita ";
+                $values['id_agenda_cita']   = $id_agenda_cita;
+            }
+    
+            if (!empty($id_paciente)){
+                $phql           .= " AND (a.id_paciente = :id_paciente OR b.id_paciente = :id_paciente)";
+                $values['id_paciente']  = $id_paciente;
+            }
+
+            $phql   .= " ORDER BY a.fecha_registro DESC ";
+
+            if ($request->hasQuery('offset')){
+                $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
+            }
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $data = [];
+            while ($row = $result->fetch()) {
+                $row['fecha_registro']  = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                $data[] = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'Created');
+            return $response;
+        }
+        
+    });
+
+    // Ruta principal para obtener todos los usuarios
+    $app->get('/ctpacientes/show_motivo_consulta', function () use ($app,$db,$request) {
+        try{
+            //  PARAMETROS
+            $id_paciente        = $request->getQuery('id_paciente');
+            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            $id_agenda_cita     = $request->getQuery('id_agenda_cita') ?? null;
+            
+            // Definir el query SQL
+            $phql   = " SELECT  
+                            a.*
+                        FROM tbmotivo_consulta a 
                         LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
                         WHERE 1 = 1 ";
             $values = array();
