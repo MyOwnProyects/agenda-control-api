@@ -1894,5 +1894,118 @@ return function (Micro $app,$di) {
         
     });
 
+    $app->post('/ctpacientes/save_motivo_consulta', function () use ($app,$db,$request) {
+        try {
+    
+            //  OBTENER PARAMETROS
+            $id_paciente    = $request->getPost('id_paciente') ?? null;
+            $id_agenda_cita = $request->getPost('id_agenda_cita') ?? null;
+            $obj_info       = $request->getPost('obj_info') ?? array();
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $id_usuario_registro    = null;
+
+            if (empty($id_paciente) && empty($id_agenda_cita)){
+                throw new Exception("Parametro de id invalido");
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita";
+                $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                // Recorrer los resultados
+                $flag_exists    = false;
+                while ($row = $result->fetch()) {
+                    $flag_exists    = true;
+                    $id_paciente    = $row['id_paciente'];
+                }
+
+                if (!$flag_exists){
+                    throw new Exception("Cita inexistente en la agenda", 404);
+                }
+            }
+
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $id_usuario_registro    = $row['id'];
+            }
+
+            //  SI EXISTEN REGISTROS CAPTURADOS DEBE DE SER UNA EDICION
+            $phql   = "SELECT * FROM tbmotivo_consulta WHERE id_agenda_cita = :id_agenda_cita";
+            $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $flag_exists    = false;
+            while ($row = $result->fetch()) {
+                $flag_exists    = true;
+                //  SE HACE EL UPDATE
+                $phql   = "UPDATE tbmotivo_consulta SET 
+                                motivo_consulta = :motivo_consulta,
+                                padecimiento_actual = :padecimiento_actual,
+                                antecedentes_relevantes = :antecedentes_relevantes
+                            WHERE id = :id ";
+                
+                $values = array(
+                    'motivo_consulta'           => $obj_info['motivo_consulta'],
+                    'padecimiento_actual'       => $obj_info['padecimiento_actual'],
+                    'antecedentes_relevantes'   => $obj_info['antecedentes_relevantes'],
+                    'id'                        => $row['id']
+                );
+
+                $result = $db->query($phql,$values);
+
+            }
+
+            //  SE HACE EL INSERT
+            if (!$flag_exists){
+                $phql   = "INSERT INTO tbmotivo_consulta (
+                                id_paciente,
+                                id_agenda_cita,
+                                motivo_consulta,
+                                padecimiento_actual,
+                                antecedentes_relevantes,
+                                id_usuario_registro
+                            )
+                            VALUES (
+                                :id_paciente,
+                                :id_agenda_cita,
+                                :motivo_consulta,
+                                :padecimiento_actual,
+                                :antecedentes_relevantes,
+                                :id_usuario_registro
+                            )";
+                
+                $values = array(
+                    'id_paciente'               => $id_paciente,
+                    'id_agenda_cita'            => $id_agenda_cita,
+                    'motivo_consulta'           => $obj_info['motivo_consulta'],
+                    'padecimiento_actual'       => $obj_info['padecimiento_actual'],
+                    'antecedentes_relevantes'   => $obj_info['antecedentes_relevantes'],
+                    'id_usuario_registro'       => $id_usuario_registro
+                );
+
+                $result = $db->query($phql,$values);
+            }
+
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
     
 };
