@@ -1689,6 +1689,7 @@ return function (Micro $app,$di) {
                                 presion_arterial_sistolica = :presion_arterial_sistolica,
                                 presion_arterial_diastolica = :presion_arterial_diastolica,
                                 saturacion_oxigeno = :saturacion_oxigeno,
+                                alergias = :alergias,
                                 observaciones = :observaciones
                             WHERE id = :id";
                 
@@ -1702,6 +1703,7 @@ return function (Micro $app,$di) {
                     'presion_arterial_sistolica'    => isset($obj_info['presion_arterial_sistolica']) ? $obj_info['presion_arterial_sistolica'] : null,
                     'presion_arterial_diastolica'   => isset($obj_info['presion_arterial_diastolica']) ? $obj_info['presion_arterial_diastolica'] : null,
                     'saturacion_oxigeno'            => isset($obj_info['saturacion_oxigeno']) ? $obj_info['saturacion_oxigeno'] : null,
+                    'alergias'                      => isset($obj_info['alergias']) ? $obj_info['alergias'] : null,
                     'observaciones'                 => isset($obj_info['observaciones']) ? $obj_info['observaciones'] : null,
                     'id'                            => $row['id']
                 );
@@ -1724,6 +1726,7 @@ return function (Micro $app,$di) {
                                 presion_arterial_sistolica,
                                 presion_arterial_diastolica,
                                 saturacion_oxigeno,
+                                alergias,
                                 observaciones,
                                 id_profesional_registro
                             )
@@ -1739,6 +1742,7 @@ return function (Micro $app,$di) {
                                 :presion_arterial_sistolica,
                                 :presion_arterial_diastolica,
                                 :saturacion_oxigeno,
+                                :alergias,
                                 :observaciones,
                                 :id_profesional_registro
                             )";
@@ -1755,6 +1759,7 @@ return function (Micro $app,$di) {
                     'presion_arterial_sistolica'    => isset($obj_info['presion_arterial_sistolica']) ? $obj_info['presion_arterial_sistolica'] : null,
                     'presion_arterial_diastolica'   => isset($obj_info['presion_arterial_diastolica']) ? $obj_info['presion_arterial_diastolica'] : null,
                     'saturacion_oxigeno'            => isset($obj_info['saturacion_oxigeno']) ? $obj_info['saturacion_oxigeno'] : null,
+                    'alergias'                      => isset($obj_info['alergias']) ? $obj_info['alergias'] : null,
                     'observaciones'                 => isset($obj_info['observaciones']) ? $obj_info['observaciones'] : null,
                     'id_profesional_registro'       => $id_profesional
                 );
