@@ -1200,7 +1200,9 @@ return function (Micro $app,$di) {
                 'info_paciente' => array(),
                 'citas_activas' => 0,
                 'areas_enfoque' => array(),
-                'info_citas_programadas'    => array()
+                'info_citas_programadas'    => array(),
+                'tipo_archivos'             => array(),
+                'archivos'                  => array()
             );
             
             if (empty($id_paciente) && empty($id_agenda_cita)){
@@ -1375,6 +1377,34 @@ return function (Micro $app,$di) {
 
                     $arr_return['areas_enfoque'][$data_enfoque['clave']]['subarea'][]   = $data_enfoque; 
                 }
+            }
+
+            //  OBTENER ARCHIVOS DEL PACIENTE
+            $phql   = " SELECT 
+                            a.*,
+                            b.nombre as nombre_categoria
+                        FROM tbpacientes_archivos a 
+                        LEFT JOIN cttipo_archivos b ON a.id_tipo_archivo = b.id
+                        WHERE a.id_paciente = :id_paciente 
+                        ORDER BY a.fecha_registro,b.nombre";
+
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while ($row = $result->fetch()) {
+                $row['fecha_registro']      = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                $arr_return['archivos'][]   = $row;
+            }
+
+            //  OBTIENEN TODAS LAS CATEGORIAS DE DOCUMENTOS
+            $phql   = "SELECT * FROM cttipo_archivos ORDER BY clave;";
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while ($row = $result->fetch()) {
+                $arr_return['tipo_archivos'][]  = $row;
             }
     
             // Devolver los datos en formato JSON
