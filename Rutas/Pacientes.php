@@ -1422,6 +1422,75 @@ return function (Micro $app,$di) {
         
     });
 
+    $app->post('/ctpacientes/save_file', function () use ($app, $db, $request) {
+        try {
+
+            //  PARAMETROS
+            $id_paciente        = $request->getPost('id_paciente');
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $id_tipo_archivo    = $request->getPost('id_tipo_archivo');
+            $nombre_archivo     = $request->getPost('nombre_archivo');
+            $nombre_original    = $request->getPost('nombre_original');
+            $observaciones      = $request->getPost('observaciones') ?? null;
+            $id_agenda_cita     = $request->getPost('id_agenda_cita') ?? null;
+
+            //  SE BUSCA EL ID_PROFESIONAL DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_usuario = null;
+            while ($row = $result->fetch()) {
+                $id_usuario = $row['id'];
+            }
+
+            //  SE CREA EL REGISTRO
+            $phql   = " INSERT INTO tbpacientes_archivos (
+                                        id_paciente,
+                                        id_agenda_cita,
+                                        id_tipo_archivo,
+                                        nombre_archivo,
+                                        nombre_original,
+                                        id_usuario_captura,
+                                        observaciones
+                                    )
+                        VALUES (
+                                    :id_paciente,
+                                    :id_agenda_cita,
+                                    :id_tipo_archivo,
+                                    :nombre_archivo,
+                                    :nombre_original,
+                                    :id_usuario_captura,
+                                    :observaciones
+                                )";
+
+            $values = array(
+                'id_paciente'           => $id_paciente,
+                'id_agenda_cita'        => $id_agenda_cita,
+                'id_tipo_archivo'       => $id_tipo_archivo,
+                'nombre_archivo'        => $nombre_archivo,
+                'nombre_original'       => $nombre_original,
+                'id_usuario_captura'    => $id_usuario,
+                'observaciones'         => $observaciones,
+            );
+
+            $result = $db->execute($phql,$values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
     $app->get('/ctareas_enfoque/show', function () use ($app,$db,$request) {
         try{
             // Ejecutar el query y obtener el resultado
