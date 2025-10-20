@@ -1209,7 +1209,9 @@ return function (Micro $app,$di) {
                 'info_paciente' => array(),
                 'citas_activas' => 0,
                 'areas_enfoque' => array(),
-                'info_citas_programadas'    => array()
+                'info_citas_programadas'    => array(),
+                'tipo_archivos'             => array(),
+                'archivos'                  => array()
             );
             
             if (empty($id_paciente) && empty($id_agenda_cita)){
@@ -1385,6 +1387,38 @@ return function (Micro $app,$di) {
                     $arr_return['areas_enfoque'][$data_enfoque['clave']]['subarea'][]   = $data_enfoque; 
                 }
             }
+
+            //  OBTENER ARCHIVOS DEL PACIENTE
+            $phql   = " SELECT 
+                            a.*,
+                            (b.primer_apellido||' '||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
+                            d.nombre as nombre_tipo_archivo,
+                            d.clave as clave_tipo_archivo
+                        FROM tbpacientes_archivos a
+                        LEFT JOIN ctpacientes b ON a.id_paciente = b.id
+                        LEFT JOIN tbagenda_citas c ON a.id_agenda_cita = c.id
+                        LEFT JOIN cttipo_archivos d ON a.id_tipo_archivo = d.id
+                        WHERE a.id_paciente = :id_paciente
+                        ORDER BY d.nombre,a.nombre_original;";
+
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while ($row = $result->fetch()) {
+                $row['fecha_registro']      = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                $arr_return['archivos'][]   = $row;
+            }
+
+            //  OBTIENEN TODAS LAS CATEGORIAS DE DOCUMENTOS
+            $phql   = "SELECT * FROM cttipo_archivos ORDER BY clave;";
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while ($row = $result->fetch()) {
+                $arr_return['tipo_archivos'][]  = $row;
+            }
     
             // Devolver los datos en formato JSON
             $response = new Response();
@@ -1399,6 +1433,181 @@ return function (Micro $app,$di) {
             return $response;
         }
         
+    });
+
+    $app->post('/ctpacientes/save_file', function () use ($app, $db, $request) {
+        try {
+
+            //  PARAMETROS
+            $id_paciente        = $request->getPost('id_paciente');
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $id_tipo_archivo    = $request->getPost('id_tipo_archivo');
+            $nombre_archivo     = $request->getPost('nombre_archivo');
+            $nombre_original    = $request->getPost('nombre_original');
+            $observaciones      = $request->getPost('observaciones') ?? null;
+            $id_agenda_cita     = $request->getPost('id_agenda_cita') ?? null;
+
+            if ($id_agenda_cita == ''){
+                $id_agenda_cita = null;
+            }
+
+            //  SE BUSCA EL ID_PROFESIONAL DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_usuario = null;
+            while ($row = $result->fetch()) {
+                $id_usuario = $row['id'];
+            }
+
+            //  SE CREA EL REGISTRO
+            $phql   = " INSERT INTO tbpacientes_archivos (
+                                        id_paciente,
+                                        id_agenda_cita,
+                                        id_tipo_archivo,
+                                        nombre_archivo,
+                                        nombre_original,
+                                        id_usuario_captura,
+                                        observaciones
+                                    )
+                        VALUES (
+                                    :id_paciente,
+                                    :id_agenda_cita,
+                                    :id_tipo_archivo,
+                                    :nombre_archivo,
+                                    :nombre_original,
+                                    :id_usuario_captura,
+                                    :observaciones
+                                )";
+
+            $values = array(
+                'id_paciente'           => $id_paciente,
+                'id_agenda_cita'        => $id_agenda_cita,
+                'id_tipo_archivo'       => $id_tipo_archivo,
+                'nombre_archivo'        => $nombre_archivo,
+                'nombre_original'       => $nombre_original,
+                'id_usuario_captura'    => $id_usuario,
+                'observaciones'         => $observaciones,
+            );
+
+            $result = $db->execute($phql,$values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->delete('/ctpacientes/delete_file', function () use ($app, $db, $request) {
+        try {
+
+            //  PARAMETROS
+            $id_paciente    = $request->getPost('id_paciente');
+            $id_archivo     = $request->getPost('id_archivo');
+            $nombre_archivo = null;
+
+            $values = array(
+                'id_paciente'   => $id_paciente,
+                'id'            => $id_archivo,
+            );
+
+            //  SE OBTIENE EL NOMBRE DEL ARCHIVO
+            $phql   = "SELECT * FROM tbpacientes_archivos WHERE id = :id AND id_paciente = :id_paciente";
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $nombre_archivo = $row['nombre_archivo'];
+            }
+
+            if (empty($nombre_archivo)){
+                throw new Exception("Error: archivo inexistente", 404);
+                
+            }
+
+            //  SE CREA EL REGISTRO
+            $phql   = " DELETE FROM tbpacientes_archivos WHERE id = :id AND id_paciente = :id_paciente";
+
+            $result = $db->execute($phql,$values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK','nombre_archivo' => $nombre_archivo));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->get('/ctpacientes/show_file', function () use ($app, $db, $request) {
+        try {
+
+            //  PARAMETROS
+            $id                 = $request->getQuery('id');
+            $id_paciente        = $request->getQuery('id_paciente');
+            $id_agenda_cita     = $request->getQuery('id_agenda_cita') ?? null;
+            $arr_return         = array();
+
+            //  SE CREA EL REGISTRO
+            $phql   = " SELECT 
+                            a.*,
+                            (b.primer_apellido||' '||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
+                            d.nombre as nombre_tipo_archivo,
+                            d.clave as clave_tipo_archivo
+                        FROM tbpacientes_archivos a
+                        LEFT JOIN ctpacientes b ON a.id_paciente = b.id
+                        LEFT JOIN tbagenda_citas c ON a.id_agenda_cita = c.id
+                        LEFT JOIN cttipo_archivos d ON a.id_tipo_archivo = d.id
+                        WHERE a.id_paciente = :id_paciente";
+
+            $values = array(
+                'id_paciente'   => $id_paciente
+            );
+
+            if (!empty($id)){
+                $phql           .= ' AND a.id = :id ';
+                $values['id']   = $id;
+            }
+
+            $phql   .= ' ORDER BY d.nombre,a.nombre_original ';
+
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $arr_return = array();
+            while ($row = $result->fetch()) {
+                $arr_return[]   = $row;
+            }
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
     });
 
     $app->get('/ctareas_enfoque/show', function () use ($app,$db,$request) {
