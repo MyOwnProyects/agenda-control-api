@@ -869,11 +869,11 @@ return function (Micro $app,$di) {
                 while ($data = $result->fetch()) {
                     $flag_exist = true;
                     if ($data['fecha_permitida'] != 1 ){
-                        throw new Exception('No esta permitedo agendar o regendar citas menores al d&iacute;a de hoy: '.$data['hoy']);
+                        throw new Exception('No esta permitedo agendar o regendar citas menores al d&iacute;a de hoy: '.FuncionesGlobales::formatearFecha($data['hoy']));
                     }
 
                     if ($data['fecha_limite_apertura'] != 1 ){
-                        throw new Exception('La fecha ingresada es mayor a la fecha limite de apertura de agenda: '.$data['fecha_limite_apertura']);
+                        throw new Exception('La fecha ingresada es mayor a la fecha limite de apertura de agenda: '.FuncionesGlobales::formatearFecha($data['fecha_limite']));
                     }
                 }
             }
