@@ -1383,7 +1383,8 @@ return function (Micro $app,$di) {
             $phql   = " SELECT 
                             a.*,
                             (b.primer_apellido||' '||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
-                            d.nombre as nombre_tipo_archivo
+                            d.nombre as nombre_tipo_archivo,
+                            d.clave as clave_tipo_archivo
                         FROM tbpacientes_archivos a
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN tbagenda_citas c ON a.id_agenda_cita = c.id
@@ -1504,20 +1505,36 @@ return function (Micro $app,$di) {
             //  PARAMETROS
             $id_paciente    = $request->getPost('id_paciente');
             $id_archivo     = $request->getPost('id_archivo');
-
-            //  SE CREA EL REGISTRO
-            $phql   = " DELETE FROM tbpacientes_archivos WHERE id = :id AND id_paciente = :id_paciente";
+            $nombre_archivo = null;
 
             $values = array(
                 'id_paciente'   => $id_paciente,
-                'id_archivo'    => $id_archivo,
+                'id'            => $id_archivo,
             );
+
+            //  SE OBTIENE EL NOMBRE DEL ARCHIVO
+            $phql   = "SELECT * FROM tbpacientes_archivos WHERE id = :id AND id_paciente = :id_paciente";
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $nombre_archivo = $row['nombre_archivo'];
+            }
+
+            if (empty($nombre_archivo)){
+                throw new Exception("Error: archivo inexistente", 404);
+                
+            }
+
+            //  SE CREA EL REGISTRO
+            $phql   = " DELETE FROM tbpacientes_archivos WHERE id = :id AND id_paciente = :id_paciente";
 
             $result = $db->execute($phql,$values);
     
             // RESPUESTA JSON
             $response = new Response();
-            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setJsonContent(array('MSG' => 'OK','nombre_archivo' => $nombre_archivo));
             $response->setStatusCode(200, 'OK');
             return $response;
             
@@ -1533,6 +1550,7 @@ return function (Micro $app,$di) {
         try {
 
             //  PARAMETROS
+            $id                 = $request->getQuery('id');
             $id_paciente        = $request->getQuery('id_paciente');
             $id_agenda_cita     = $request->getQuery('id_agenda_cita') ?? null;
             $arr_return         = array();
@@ -1541,18 +1559,24 @@ return function (Micro $app,$di) {
             $phql   = " SELECT 
                             a.*,
                             (b.primer_apellido||' '||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
-                            d.nombre as nombre_tipo_archivo
+                            d.nombre as nombre_tipo_archivo,
+                            d.clave as clave_tipo_archivo
                         FROM tbpacientes_archivos a
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN tbagenda_citas c ON a.id_agenda_cita = c.id
                         LEFT JOIN cttipo_archivos d ON a.id_tipo_archivo = d.id
-                        WHERE a.id_paciente = :id_paciente
-                        ORDER BY d.nombre,a.nombre_original
-                        ";
+                        WHERE a.id_paciente = :id_paciente";
 
             $values = array(
                 'id_paciente'   => $id_paciente
             );
+
+            if (!empty($id)){
+                $phql           .= ' AND a.id = :id ';
+                $values['id']   = $id;
+            }
+
+            $phql   .= ' ORDER BY d.nombre,a.nombre_original ';
 
             $result = $db->query($phql,$values);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
