@@ -1727,7 +1727,8 @@ return function (Micro $app,$di) {
             $arr_return = array(
                 'info_paciente'         => array(),
                 'motivo_consulta'       => array(),
-                'exploracion_fisica'    => array()
+                'exploracion_fisica'    => array(),
+                'info_cita'             => array()
             );
             
             if (empty($id_paciente) && empty($id_agenda_cita)){
@@ -1744,6 +1745,7 @@ return function (Micro $app,$di) {
                 while ($row = $result->fetch()) {
                     $flag_exists    = true;
                     $id_paciente    = $row['id_paciente'];
+                    $arr_return['info_cita']    = $row;
                 }
 
                 if (!$flag_exists){
@@ -2123,7 +2125,11 @@ return function (Micro $app,$di) {
             }
 
             if (!empty($id_agenda_cita)){
-                $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita";
+                $phql   = " SELECT 
+                                *,
+                                TO_CHAR(hora_inicio, 'HH24:MI') AS start,
+                                TO_CHAR(hora_termino, 'HH24:MI') AS end
+                            FROM tbagenda_citas WHERE id = :id_agenda_cita";
                 $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
                 $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
         
