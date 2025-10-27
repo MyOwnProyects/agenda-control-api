@@ -1784,7 +1784,7 @@ return function (Micro $app,$di) {
             //  MOTIVOS DE CONSULTA
             $phql   = " SELECT  
                             a.*
-                        FROM tbmotivo_consulta a 
+                        FROM tbpacientes_motivo_consulta a 
                         LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
                         WHERE a.id_agenda_cita = :id_agenda_cita ";
 
@@ -1803,7 +1803,7 @@ return function (Micro $app,$di) {
             //  EXPLORACION FISICA
             $phql   = " SELECT  
                             a.*
-                        FROM tbexploracion_fisica a 
+                        FROM tbpacientes_exploracion_fisica a 
                         LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
                         WHERE a.id_agenda_cita = :id_agenda_cita";
     
@@ -1881,7 +1881,7 @@ return function (Micro $app,$di) {
             }
 
             //  SI EXISTEN REGISTROS CAPTURADOS DEBE DE SER UNA EDICION
-            $phql   = "SELECT * FROM tbexploracion_fisica WHERE id_agenda_cita = :id_agenda_cita";
+            $phql   = "SELECT * FROM tbpacientes_exploracion_fisica WHERE id_agenda_cita = :id_agenda_cita";
             $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
     
@@ -1890,7 +1890,7 @@ return function (Micro $app,$di) {
             while ($row = $result->fetch()) {
                 $flag_exists    = true;
                 //  SE HACE EL UPDATE
-                $phql   = "UPDATE tbexploracion_fisica SET 
+                $phql   = "UPDATE tbpacientes_exploracion_fisica SET 
                                 peso = :peso,
                                 altura = :altura,
                                 imc = :imc,
@@ -1925,7 +1925,7 @@ return function (Micro $app,$di) {
 
             //  SE HACE EL INSERT
             if (!$flag_exists){
-                $phql   = "INSERT INTO tbexploracion_fisica (
+                $phql   = "INSERT INTO tbpacientes_exploracion_fisica (
                                 id_paciente,
                                 id_agenda_cita,
                                 peso,
@@ -2005,7 +2005,7 @@ return function (Micro $app,$di) {
             // Definir el query SQL
             $phql   = " SELECT  
                             a.*
-                        FROM tbexploracion_fisica a 
+                        FROM tbpacientes_exploracion_fisica a 
                         LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
                         WHERE 1 = 1 ";
             $values = array();
@@ -2063,7 +2063,7 @@ return function (Micro $app,$di) {
             // Definir el query SQL
             $phql   = " SELECT  
                             a.*
-                        FROM tbmotivo_consulta a 
+                        FROM tbpacientes_motivo_consulta a 
                         LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
                         WHERE 1 = 1 ";
             $values = array();
@@ -2155,7 +2155,7 @@ return function (Micro $app,$di) {
             }
 
             //  SI EXISTEN REGISTROS CAPTURADOS DEBE DE SER UNA EDICION
-            $phql   = "SELECT * FROM tbmotivo_consulta WHERE id_agenda_cita = :id_agenda_cita";
+            $phql   = "SELECT * FROM tbpacientes_motivo_consulta WHERE id_agenda_cita = :id_agenda_cita";
             $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
     
@@ -2164,7 +2164,7 @@ return function (Micro $app,$di) {
             while ($row = $result->fetch()) {
                 $flag_exists    = true;
                 //  SE HACE EL UPDATE
-                $phql   = "UPDATE tbmotivo_consulta SET 
+                $phql   = "UPDATE tbpacientes_motivo_consulta SET 
                                 motivo_consulta = :motivo_consulta,
                                 padecimiento_actual = :padecimiento_actual,
                                 antecedentes_relevantes = :antecedentes_relevantes
@@ -2183,7 +2183,7 @@ return function (Micro $app,$di) {
 
             //  SE HACE EL INSERT
             if (!$flag_exists){
-                $phql   = "INSERT INTO tbmotivo_consulta (
+                $phql   = "INSERT INTO tbpacientes_motivo_consulta (
                                 id_paciente,
                                 id_agenda_cita,
                                 motivo_consulta,
