@@ -1787,11 +1787,11 @@ return function (Micro $app,$di) {
                             a.*
                         FROM tbpacientes_motivo_consulta a 
                         LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
-                        WHERE a.id_agenda_cita = :id_agenda_cita ";
+                        WHERE b.id_paciente = :id_paciente ";
 
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,array(
-                'id_agenda_cita'    => $id_agenda_cita
+                'id_paciente'   => $id_paciente
             ));
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
     
@@ -1806,10 +1806,10 @@ return function (Micro $app,$di) {
                             a.*
                         FROM tbpacientes_exploracion_fisica a 
                         LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
-                        WHERE a.id_agenda_cita = :id_agenda_cita";
+                        WHERE b.id_paciente = :id_paciente";
     
             $result = $db->query($phql,array(
-                'id_agenda_cita'    => $id_agenda_cita
+                'id_paciente'    => $id_paciente
             ));
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
