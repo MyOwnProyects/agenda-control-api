@@ -1830,7 +1830,7 @@ return function (Micro $app,$di) {
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
             while ($row = $result->fetch()) {
-                $row['ultima_fecha_emitida']        = FuncionesGlobales::formatearFecha($row['ultima_fecha_emitida']);
+                $row['fecha_ultima_edicion']        = FuncionesGlobales::formatearFecha($row['fecha_ultima_edicion']);
                 $row['fecha_creacion']              = FuncionesGlobales::formatearFecha($row['fecha_creacion']);
                 $arr_return['recetas_medicas'][]    = $row;
             }
@@ -2253,6 +2253,7 @@ return function (Micro $app,$di) {
             $obj_info       = $request->getPost('obj_info') ?? array();
             $usuario_solicitud  = $request->getPost('usuario_solicitud');
             $id_usuario_captura = null;
+            $id_receta          = null;
 
             if (empty($id_paciente) && empty($id_agenda_cita)){
                 throw new Exception("Parametro de id invalido");
@@ -2296,12 +2297,13 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $flag_exists    = false;
             while ($row = $result->fetch()) {
+                $id_receta      = $row['id'];
                 $flag_exists    = true;
                 //  SE HACE EL UPDATE
                 $phql   = "UPDATE tbpacientes_receta_medica SET 
                                 diagnostico = :diagnostico,
                                 tratamiento = :tratamiento,
-                                ultima_fecha_emitida = NOW()
+                                fecha_ultima_edicion = NOW()
                             WHERE id = :id ";
                 
                 $values = array(
@@ -2329,7 +2331,7 @@ return function (Micro $app,$di) {
                                 :diagnostico,
                                 :tratamiento,
                                 :id_usuario_captura
-                            )";
+                            ) RETURNING *";
                 
                 $values = array(
                     'id_paciente'       => $id_paciente,
@@ -2340,11 +2342,16 @@ return function (Micro $app,$di) {
                 );
 
                 $result = $db->query($phql,$values);
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                while ($row = $result->fetch()) {
+                    $id_receta  = $row['id'];
+                }
             }
 
             // Devolver los datos en formato JSON
             $response = new Response();
-            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setJsonContent(array('id_receta' => $id_receta));
             $response->setStatusCode(200, 'OK');
             return $response;
         }catch (\Exception $e){
@@ -2361,9 +2368,9 @@ return function (Micro $app,$di) {
         try {
     
             //  OBTENER PARAMETROS
-            $id_paciente    = $request->getPost('id_paciente') ?? null;
-            $id_agenda_cita = $request->getPost('id_agenda_cita') ?? null;
-            $id_receta      = $request->getPost('id_receta') ?? null;
+            $id_paciente    = $request->getQuery('id_paciente') ?? null;
+            $id_agenda_cita = $request->getQuery('id_agenda_cita') ?? null;
+            $id_receta      = $request->getQuery('id_receta') ?? null;
             $arr_return     = array();
 
             if (empty($id_paciente) && empty($id_agenda_cita) && empty($id_receta)){
@@ -2396,12 +2403,16 @@ return function (Micro $app,$di) {
                             a.id as id_receta,
                             a.diagnostico,
                             a.tratamiento,
-                            (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
-                            (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) as nombre_profesional,
+                            a.fecha_ultima_edicion,
+                            (f.primer_apellido|| ' ' ||COALESCE(f.segundo_apellido,'')||' '||f.nombre) as nombre_completo,
+                            (c.nombre|| ' ' ||c.primer_apellido||' '||COALESCE(c.segundo_apellido,'')) as nombre_profesional,
                             c.titulo,
                             c.cedula_profesional,
                             c.correo_electronico,
                             d.nombre as nombre_locacion,
+                            d.direccion,
+                            d.telefono,
+                            d.celular,
                             current_date as fecha_actual,
                             e.fecha_registro,              
                             e.peso,                        
@@ -2420,6 +2431,7 @@ return function (Micro $app,$di) {
                         LEFT JOIN ctprofesionales c ON b.id_profesional = c.id
                         LEFT JOIN ctlocaciones d ON b.id_locacion = d.id
                         LEFT JOIN tbpacientes_exploracion_fisica e ON b.id = e.id_agenda_cita
+                        LEFT JOIN ctpacientes f ON a.id_paciente = f.id
                         WHERE 1 = 1 ";
 
             $values = array();
@@ -2445,6 +2457,8 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $flag_exists    = false;
             while ($row = $result->fetch()) {
+                $row['presion_arterial']        = $row['presion_arterial_sistolica'] != null ? ($row['presion_arterial_sistolica'].'/'.$row['presion_arterial_diastolica']) : '';
+                $row['fecha_ultima_edicion']    = FuncionesGlobales::formatearFecha($row['fecha_ultima_edicion']);
                 $arr_return[]   = $row;
             }
 
