@@ -1787,7 +1787,7 @@ return function (Micro $app,$di) {
                             a.*
                         FROM tbpacientes_motivo_consulta a 
                         LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
-                        WHERE b.id_paciente = :id_paciente ";
+                        WHERE b.id_paciente = :id_paciente ORDER BY a.fecha_registro DESC";
 
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,array(
@@ -1806,7 +1806,7 @@ return function (Micro $app,$di) {
                             a.*
                         FROM tbpacientes_exploracion_fisica a 
                         LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
-                        WHERE b.id_paciente = :id_paciente";
+                        WHERE b.id_paciente = :id_paciente ORDER BY a.fecha_registro DESC";
     
             $result = $db->query($phql,array(
                 'id_paciente'    => $id_paciente
