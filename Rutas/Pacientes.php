@@ -445,10 +445,28 @@ return function (Micro $app,$di) {
             ];
     
             $result = $db->execute($phql, $values);
+
+            //  OBTENER LA EDAD DEL PACIENTE
+            $phql   = "SELECT  
+                            CASE 
+                                WHEN fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 1, '0')
+                                ELSE NULL
+                            END AS edad_actual
+                        FROM ctpacientes a WHERE a.id = :id_paciente";
+    
+            $result = $db->query($phql, array('id_paciente' => $id));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            $edad_actual    = '0.0';
+            while ($row = $result->fetch()) {
+                $edad_actual    = $row['edad_actual'];
+            }
     
             // RESPUESTA JSON
             $response = new Response();
-            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setJsonContent(array('MSG' => 'OK','edad_actual' => $edad_actual));
             $response->setStatusCode(200, 'OK');
             return $response;
             
