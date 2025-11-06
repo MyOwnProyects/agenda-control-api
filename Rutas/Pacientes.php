@@ -2389,7 +2389,9 @@ return function (Micro $app,$di) {
             $id_paciente    = $request->getQuery('id_paciente') ?? null;
             $id_agenda_cita = $request->getQuery('id_agenda_cita') ?? null;
             $id_receta      = $request->getQuery('id_receta') ?? null;
+            $get_historico  = $request->getQuery('get_historico') ?? null;
             $arr_return     = array();
+            $flag_has_record    = false;
 
             if (empty($id_paciente) && empty($id_agenda_cita) && empty($id_receta)){
                 throw new Exception("Parametro de id invalido");
@@ -2460,7 +2462,7 @@ return function (Micro $app,$di) {
             }
 
             if (!empty($id_agenda_cita)){
-                $phql   .= ' AND b.id_agenda_cita = :id_agenda_cita ';
+                $phql   .= ' AND b.id = :id_agenda_cita ';
                 $values['id_agenda_cita']   = $id_agenda_cita;
             }
 
@@ -2477,7 +2479,57 @@ return function (Micro $app,$di) {
             while ($row = $result->fetch()) {
                 $row['presion_arterial']        = $row['presion_arterial_sistolica'] != null ? ($row['presion_arterial_sistolica'].'/'.$row['presion_arterial_diastolica']) : '';
                 $row['fecha_ultima_edicion']    = FuncionesGlobales::formatearFecha($row['fecha_ultima_edicion']);
-                $arr_return[]   = $row;
+                $arr_return[]                   = $row;
+                $flag_has_record                = true;
+            }
+
+            if ($get_historico && !empty($id_agenda_cita)){
+                $arr_return = array(
+                    'info_receta'   => count($arr_return) > 0 ? $arr_return[0] : [],
+                    'info_exploracion_fisica'   => [],
+                    'info_motivo_consulta'      => []
+                );
+
+                //  SE BUSCA EL MOTIVO DE CONSULTA DE LA CITA
+                //  MOTIVOS DE CONSULTA
+                $phql   = " SELECT  
+                                a.*
+                            FROM tbpacientes_motivo_consulta a 
+                            WHERE a.id_agenda_cita = :id_agenda_cita ORDER BY a.fecha_registro DESC";
+
+                // Ejecutar el query y obtener el resultado
+                $result = $db->query($phql,array(
+                    'id_agenda_cita'    => $id_agenda_cita
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                // Recorrer los resultados
+                while ($row = $result->fetch()) {
+                    $row['fecha_registro']              = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                    $arr_return['info_motivo_consulta'] = $row;
+                    $flag_has_record                    = true;
+                }
+
+                //  EXPLORACION FISICA
+                $phql   = " SELECT  
+                                a.*
+                            FROM tbpacientes_exploracion_fisica a 
+                            WHERE a.id_agenda_cita = :id_agenda_cita ORDER BY a.fecha_registro DESC";
+        
+                $result = $db->query($phql,array(
+                    'id_agenda_cita'    => $id_agenda_cita
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                while ($row = $result->fetch()) {
+                    $row['fecha_registro']                  = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                    $arr_return['info_exploracion_fisica']  = $row;
+                    $flag_has_record                        = true;
+                }
+            }
+
+            if (!$flag_has_record){
+                throw new Exception("No existe captura de algún dato de exploración o receta realizada para esta cita", 404);
             }
 
             // Devolver los datos en formato JSON
