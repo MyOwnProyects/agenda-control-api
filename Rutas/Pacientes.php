@@ -2522,6 +2522,7 @@ return function (Micro $app,$di) {
                 $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
                 while ($row = $result->fetch()) {
+                    $row['presion_arterial']                = $row['presion_arterial_sistolica'] != null ? ($row['presion_arterial_sistolica'].'/'.$row['presion_arterial_diastolica']) : '';
                     $row['fecha_registro']                  = FuncionesGlobales::formatearFecha($row['fecha_registro']);
                     $arr_return['info_exploracion_fisica']  = $row;
                     $flag_has_record                        = true;
