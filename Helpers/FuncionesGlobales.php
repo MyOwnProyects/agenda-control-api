@@ -7,8 +7,10 @@ class FuncionesGlobales {
         return mb_strtolower($string, 'UTF-8');
     }
 
-    public static function formatearFecha($fecha) {
-        return date("d-m-Y", strtotime($fecha));
+    public static function formatearFecha($fecha,$formato_retorno = null) {
+        if(empty($fecha)) return '';
+        $formato_retorno    = $formato_retorno != null ? $formato_retorno : "d/m/Y";
+        return date($formato_retorno, strtotime($fecha));
     }
 
     public static function validarCorreo($correo) {
@@ -71,5 +73,99 @@ class FuncionesGlobales {
         } else {
             return $mensaje;
         }
+    }
+
+    public static function clear_text_html($html)
+    {
+        // 1. Remover etiquetas <script> y su contenido completo
+        // ✅ CORRECTO (flags de PHP)
+        $html = preg_replace('/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/is', '', $html);
+        
+        // 2. Remover etiquetas <?php y su contenido
+        $html = preg_replace('/<\?php.*?\?>/is', '', $html);
+        $html = preg_replace('/<\?.*?\?>/is', '', $html);
+        
+        // 3. Remover todos los eventos JavaScript (onclick, onmouseover, etc.)
+        $html = preg_replace('/\s*on\w+\s*=\s*["\'][^"\']*["\']/i', '', $html);
+        $html = preg_replace('/\s*on\w+\s*=\s*[^>\s]*/i', '', $html);
+        
+        // 4. Remover javascript: y vbscript: en URLs
+        $html = preg_replace('/javascript\s*:/i', '', $html);
+        $html = preg_replace('/vbscript\s*:/i', '', $html);
+        
+        // 5. Remover etiquetas peligrosas específicas
+        $dangerousTags = [
+            'script', 'php', 'iframe', 'object', 'embed', 'form', 'input', 
+            'button', 'textarea', 'select', 'style', 'link', 'meta'
+        ];
+        
+        foreach ($dangerousTags as $tag) {
+            $html = preg_replace('/<\/?' . preg_quote($tag) . '(\s[^>]*)?>/i', '', $html);
+        }
+        
+        // // 6. Solo permitir etiquetas HTML seguras (basado en tu configuración de Summernote)
+        // $allowedTags = '<p><br><strong><b><em><i><u><ul><ol><li><span><div><font>';
+        // $html = strip_tags($html, $allowedTags);
+        
+        // 7. Limpiar atributos style peligrosos pero mantener seguros
+        // $html = preg_replace_callback(
+        //     '/style\s*=\s*["\']([^"\']*)["\']/i',
+        //     function($matches) {
+        //         $styleContent = $matches[1];
+                
+        //         // Remover CSS peligroso
+        //         if (preg_match('/expression|javascript|behavior|binding/i', $styleContent)) {
+        //             return '';
+        //         }
+                
+        //         // Solo permitir propiedades CSS seguras
+        //         $allowedProps = ['color', 'font-size', 'font-weight', 'font-style', 'text-decoration', 'background-color', 'text-align'];
+        //         $cleanStyles = [];
+                
+        //         foreach (explode(';', $styleContent) as $property) {
+        //             $property = trim($property);
+        //             if (empty($property)) continue;
+                    
+        //             $parts = explode(':', $property, 2);
+        //             if (count($parts) == 2) {
+        //                 $prop = trim(strtolower($parts[0]));
+        //                 $value = trim($parts[1]);
+                        
+        //                 if (in_array($prop, $allowedProps) && !preg_match('/javascript|expression/i', $value)) {
+        //                     $cleanStyles[] = $prop . ': ' . $value;
+        //                 }
+        //             }
+        //         }
+                
+        //         return !empty($cleanStyles) ? 'style="' . implode('; ', $cleanStyles) . '"' : '';
+        //     },
+        //     $html
+        // );
+        
+        // 8. Limpiar espacios extra y retornar
+        return trim(preg_replace('/\s+/', ' ', $html));
+    }
+
+    /**
+     * Calcula el Índice de Masa Corporal (IMC).
+     *
+     * @param float $peso   Peso en kilogramos (kg).
+     * @param float $altura Altura en centímetros (cm).
+     * @return float        IMC redondeado a 2 decimales.
+     */
+    public static function calcularIMC($peso, $altura) {
+        // Validar que sean valores positivos
+        if ($peso <= 0 || $altura <= 0 || empty($peso) || empty($altura)) {
+            return null;
+        }
+
+        // Convertir altura de centímetros a metros
+        $alturaMetros = $altura / 100;
+
+        // Calcular IMC
+        $imc = $peso / pow($alturaMetros, 2);
+
+        // Retornar con 2 decimales
+        return round($imc, 2);
     }
 }

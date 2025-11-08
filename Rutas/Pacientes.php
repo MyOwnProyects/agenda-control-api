@@ -117,6 +117,7 @@ return function (Micro $app,$di) {
             $id_locacion_registro   = $request->getQuery('id_locacion_registro');
             $usuario_solicitud      = $request->getQuery('usuario_solicitud');
             $get_diagnoses          = $request->getQuery('get_diagnoses') ?? null;
+            $id_agenda_cita         = $request->getQuery('id_agenda_cita') ?? null;
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -151,6 +152,14 @@ return function (Micro $app,$di) {
             if (is_numeric($id)){
                 $phql           .= " AND a.id = :id";
                 $values['id']   = $id;
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   .= ' AND EXISTS (
+                                SELECT 1 FROM tbagenda_citas tac 
+                                WHERE tac.id = :id_agenda_cita AND tac.id_paciente = a.id 
+                            )';
+                $values['id_agenda_cita']   = $id_agenda_cita;
             }
 
             if (!empty($clave) && (empty($accion) || $accion != 'login')) {
@@ -369,9 +378,10 @@ return function (Micro $app,$di) {
             $segundo_apellido   = $request->getPost('segundo_apellido') ?? null;
             $nombre             = $request->getPost('nombre') ?? null;
             $celular            = $request->getPost('celular') ?? null;
-            $id_locacion_registro   = $request->getPost('id_locacion_registro') ?? null;
-            $fecha_nacimiento       = $request->getPost('fecha_nacimiento') ?? null;
-           
+            $fecha_nacimiento   = $request->getPost('fecha_nacimiento') ?? null;
+            $genero             = $request->getPost('genero') ?? null;
+            $correo_electronico = $request->getPost('correo_electronico') ?? null;
+            $direccion          = $request->getPost('direccion') ?? null;
     
             //  VERIFICACION DE PARAMETROS
 
@@ -391,12 +401,12 @@ return function (Micro $app,$di) {
                 throw new Exception('Par&aacute;metro "Celular" vac&iacute;o');
             }
 
-            if (empty($id_locacion_registro)) {
-                throw new Exception('Par&aacute;metro "Locacion" vac&iacute;o');
-            }
-
             if (!FuncionesGlobales::validarTelefono($celular)){
                 throw new Exception('Parámetro "Celular" invalido');
+            }
+
+            if (!empty($correo_electronico) && !FuncionesGlobales::validarCorreo($correo_electronico)){
+                throw new Exception('Parámetro "Correo electronico" invalido.');
             }
     
             // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
@@ -425,7 +435,10 @@ return function (Micro $app,$di) {
                         segundo_apellido = :segundo_apellido,
                         nombre = :nombre,
                         celular = :celular,
-                        fecha_nacimiento = :fecha_nacimiento
+                        fecha_nacimiento = :fecha_nacimiento,
+                        genero = :genero,
+                        correo_electronico = :correo_electronico,
+                        direccion = :direccion
                     WHERE id = :id";
     
             $values = [
@@ -434,14 +447,35 @@ return function (Micro $app,$di) {
                 'nombre'            => $nombre,
                 'celular'           => $celular,
                 'fecha_nacimiento'  => $fecha_nacimiento,
-                'id'                => $id            
+                'genero'            => $genero,
+                'correo_electronico'    => $correo_electronico,
+                'direccion'             => $direccion,
+                'id'                    => $id            
             ];
     
             $result = $db->execute($phql, $values);
+
+            //  OBTENER LA EDAD DEL PACIENTE
+            $phql   = "SELECT  
+                            CASE 
+                                WHEN fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 1, '0')
+                                ELSE NULL
+                            END AS edad_actual
+                        FROM ctpacientes a WHERE a.id = :id_paciente";
+    
+            $result = $db->query($phql, array('id_paciente' => $id));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            $edad_actual    = '0.0';
+            while ($row = $result->fetch()) {
+                $edad_actual    = $row['edad_actual'];
+            }
     
             // RESPUESTA JSON
             $response = new Response();
-            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setJsonContent(array('MSG' => 'OK','edad_actual' => $edad_actual));
             $response->setStatusCode(200, 'OK');
             return $response;
             
@@ -1058,8 +1092,8 @@ return function (Micro $app,$di) {
             $conexion->begin();
     
             //  OBTENER PARAMETROS
-            $id_paciente    = $app->request->getPost('id_paciente') ?? null;
-            $obj_info       = $app->request->getPost('obj_info') ?? null;
+            $id_paciente    = $request->getPost('id_paciente') ?? null;
+            $obj_info       = $request->getPost('obj_info') ?? null;
             $usuario_solicitud  = $request->getPost('usuario_solicitud');
 
             if (empty($id_paciente)){
@@ -1181,4 +1215,1340 @@ return function (Micro $app,$di) {
             return $response;
         }
     });
+
+    $app->get('/ctpacientes/get_digital_record', function () use ($app,$db,$request) {
+        try{
+            //  PARAMETROS
+            $id_paciente        = $request->getQuery('id_paciente') ?? null;
+            $id_agenda_cita     = $request->getQuery('id_agenda_cita') ?? null;
+            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            
+            $arr_return = array(
+                'info_paciente' => array(),
+                'citas_activas' => 0,
+                'areas_enfoque' => array(),
+                'info_citas_programadas'    => array(),
+                'tipo_archivos'             => array(),
+                'archivos'                  => array()
+            );
+            
+            if (empty($id_paciente) && empty($id_agenda_cita)){
+                throw new Exception("Parametro de id invalido");
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita";
+                $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                // Recorrer los resultados
+                $flag_exists    = false;
+                while ($row = $result->fetch()) {
+                    $flag_exists    = true;
+                    $id_paciente    = $row['id_paciente'];
+                }
+
+                if (!$flag_exists){
+                    throw new Exception("Cita inexistente en la agenda", 404);
+                }
+            }
+        
+            // Definir el query SQL
+            $phql   = "SELECT  
+                            a.*,
+                            (a.primer_apellido|| ' ' ||COALESCE(a.segundo_apellido,'')||' '||a.nombre) as nombre_completo,
+                            c.nombre as locacion_registro,
+                            a.fecha_nacimiento,
+                            CASE 
+                                WHEN fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 1, '0')
+                                ELSE NULL
+                            END AS edad_actual
+                        FROM ctpacientes a 
+                        LEFT JOIN ctlocaciones c ON a.id_locacion_registro = c.id
+                        WHERE a.id = :id_paciente ";
+            $values = array();
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
+                $arr_return['info_paciente']    = $row;
+            }
+
+            //  SE BUSCA SI TIENE CITAS PROGRAMADAS
+            $phql   = " SELECT  
+                            d.nombre as nombre_locacion,
+                            (e.primer_apellido|| ' ' ||COALESCE(e.segundo_apellido,'')||' '||e.nombre) as nombre_profesional,
+                            f.clave as clave_servicio,
+                            f.codigo_color,
+                            c.dia,
+                            TO_CHAR(c.hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(c.hora_termino, 'HH24:MI') AS hora_termino
+                        FROM tbcitas_programadas a 
+                        LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
+                        LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
+                        LEFT JOIN ctlocaciones d ON a.id_locacion = d.id
+                        LEFT JOIN ctprofesionales e ON b.id_profesional = e.id
+                        LEFT JOIN ctservicios f ON b.id_servicio = f.id
+
+                        WHERE a.id_paciente = :id_paciente AND b.id IS NOT NULL
+                        ORDER BY c.dia,c.hora_inicio
+                        ";
+
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            while ($row = $result->fetch()) {
+                $arr_return['info_citas_programadas'][] = $row;
+            }
+
+            //  SE BUSCA SI EL PACIENTE TIENE UN DIAGNOSTICO
+            $arr_return['diagnosticos'] = array();
+            $phql   = " SELECT 
+                            a.presento_evidencia,
+                            b.* 
+                        FROM tbpacientes_diagnosticos a
+                        LEFT JOIN cttranstornos_neurodesarrollo b ON a.id_transtorno = b.id
+                        WHERE a.id_paciente = :id_paciente 
+                        ORDER BY b.clave ASC";
+
+            $result_diagnosticos    = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result_diagnosticos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result_diagnosticos){
+                while($data_diagnostico = $result_diagnosticos->fetch()){
+                    $arr_return['diagnosticos'][]   = $data_diagnostico;
+                }
+            }
+
+            //  EL USUARIO TIENE AL MENOS UNA CITA ACTIVA O AL MENOS CITA PROGRAMADA CAPTURADA,
+            //  DE NO SER ASI NO PODRA ACCEDER A VER SUS NOTAS
+            //  SE BUSCA EL ID_PROFESIONAL DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_profesional = null;
+            while ($row = $result->fetch()) {
+                $id_profesional = $row['id_profesional'];
+            }
+
+            if ($id_profesional != null){
+                $phql   = " SELECT 
+                                1 as flag_cita 
+                            FROM tbagenda_citas 
+                            WHERE id_paciente = :id_paciente AND id_profesional = :id_profesional
+                            AND activa <> 0
+                            
+                            UNION 
+                            
+                            SELECT 
+                                1 as flag_cita 
+                            FROM tbcitas_programadas a 
+                            LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
+                            WHERE a.id_paciente = :id_paciente AND b.id_profesional = :id_profesional
+                            ";
+            
+                $result_diagnosticos    = $db->query($phql,array(
+                    'id_paciente'       => $id_paciente,
+                    'id_profesional'    => $id_profesional
+                ));
+                $result_diagnosticos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result_diagnosticos){
+                    while($data_diagnostico = $result_diagnosticos->fetch()){
+                        $arr_return['citas_activas']    = 1;
+                        break;
+                    }
+                }
+            }
+
+            //  AREAS DE ENFOQUE
+            $phql   = " SELECT 
+                            b.id as id_subarea_enfoque,
+                            b.nombre as nombre_subarea,
+                            c.clave,
+                            c.nombre as nombre_area,
+                            a.id_profesional_registro 
+                        FROM tbpacientes_areas_refuerzo a
+                        LEFT JOIN ctareas_enfoque_subarea b ON a.id_subarea_enfoque = b.id
+                        LEFT JOIN ctareas_enfoque c ON b.id_area_enfoque = c.id
+                        WHERE a.id_paciente = :id_paciente
+                        ORDER BY c.clave,b.nombre";
+
+            $result_engoque = $db->query($phql,array(
+                'id_paciente'       => $id_paciente
+            ));
+            $result_engoque->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result_engoque){
+                while($data_enfoque = $result_engoque->fetch()){
+                    if (!isset($arr_return['areas_enfoque'][$data_enfoque['clave']])){
+                        $arr_return['areas_enfoque'][$data_enfoque['clave']]['info']    = array(
+                            'nombre'    => $data_enfoque['nombre_area']
+                        );
+                    }
+
+                    $arr_return['areas_enfoque'][$data_enfoque['clave']]['subarea'][]   = $data_enfoque; 
+                }
+            }
+
+            //  OBTENER ARCHIVOS DEL PACIENTE
+            $phql   = " SELECT 
+                            a.*,
+                            (b.primer_apellido||' '||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
+                            d.nombre as nombre_tipo_archivo,
+                            d.clave as clave_tipo_archivo
+                        FROM tbpacientes_archivos a
+                        LEFT JOIN ctpacientes b ON a.id_paciente = b.id
+                        LEFT JOIN tbagenda_citas c ON a.id_agenda_cita = c.id
+                        LEFT JOIN cttipo_archivos d ON a.id_tipo_archivo = d.id
+                        WHERE a.id_paciente = :id_paciente
+                        ORDER BY d.nombre,a.nombre_original;";
+
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while ($row = $result->fetch()) {
+                $row['fecha_registro']      = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                $arr_return['archivos'][]   = $row;
+            }
+
+            //  OBTIENEN TODAS LAS CATEGORIAS DE DOCUMENTOS
+            $phql   = "SELECT * FROM cttipo_archivos ORDER BY clave;";
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while ($row = $result->fetch()) {
+                $arr_return['tipo_archivos'][]  = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    $app->post('/ctpacientes/save_file', function () use ($app, $db, $request) {
+        try {
+
+            //  PARAMETROS
+            $id_paciente        = $request->getPost('id_paciente');
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $id_tipo_archivo    = $request->getPost('id_tipo_archivo');
+            $nombre_archivo     = $request->getPost('nombre_archivo');
+            $nombre_original    = $request->getPost('nombre_original');
+            $observaciones      = $request->getPost('observaciones') ?? null;
+            $id_agenda_cita     = $request->getPost('id_agenda_cita') ?? null;
+
+            if ($id_agenda_cita == ''){
+                $id_agenda_cita = null;
+            }
+
+            //  SE BUSCA EL ID_PROFESIONAL DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_usuario = null;
+            while ($row = $result->fetch()) {
+                $id_usuario = $row['id'];
+            }
+
+            //  SE CREA EL REGISTRO
+            $phql   = " INSERT INTO tbpacientes_archivos (
+                                        id_paciente,
+                                        id_agenda_cita,
+                                        id_tipo_archivo,
+                                        nombre_archivo,
+                                        nombre_original,
+                                        id_usuario_captura,
+                                        observaciones
+                                    )
+                        VALUES (
+                                    :id_paciente,
+                                    :id_agenda_cita,
+                                    :id_tipo_archivo,
+                                    :nombre_archivo,
+                                    :nombre_original,
+                                    :id_usuario_captura,
+                                    :observaciones
+                                )";
+
+            $values = array(
+                'id_paciente'           => $id_paciente,
+                'id_agenda_cita'        => $id_agenda_cita,
+                'id_tipo_archivo'       => $id_tipo_archivo,
+                'nombre_archivo'        => $nombre_archivo,
+                'nombre_original'       => $nombre_original,
+                'id_usuario_captura'    => $id_usuario,
+                'observaciones'         => $observaciones,
+            );
+
+            $result = $db->execute($phql,$values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->delete('/ctpacientes/delete_file', function () use ($app, $db, $request) {
+        try {
+
+            //  PARAMETROS
+            $id_paciente    = $request->getPost('id_paciente');
+            $id_archivo     = $request->getPost('id_archivo');
+            $nombre_archivo = null;
+
+            $values = array(
+                'id_paciente'   => $id_paciente,
+                'id'            => $id_archivo,
+            );
+
+            //  SE OBTIENE EL NOMBRE DEL ARCHIVO
+            $phql   = "SELECT * FROM tbpacientes_archivos WHERE id = :id AND id_paciente = :id_paciente";
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $nombre_archivo = $row['nombre_archivo'];
+            }
+
+            if (empty($nombre_archivo)){
+                throw new Exception("Error: archivo inexistente", 404);
+                
+            }
+
+            //  SE CREA EL REGISTRO
+            $phql   = " DELETE FROM tbpacientes_archivos WHERE id = :id AND id_paciente = :id_paciente";
+
+            $result = $db->execute($phql,$values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK','nombre_archivo' => $nombre_archivo));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->get('/ctpacientes/show_file', function () use ($app, $db, $request) {
+        try {
+
+            //  PARAMETROS
+            $id                 = $request->getQuery('id');
+            $id_paciente        = $request->getQuery('id_paciente');
+            $id_agenda_cita     = $request->getQuery('id_agenda_cita') ?? null;
+            $arr_return         = array();
+
+            //  SE CREA EL REGISTRO
+            $phql   = " SELECT 
+                            a.*,
+                            (b.primer_apellido||' '||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
+                            d.nombre as nombre_tipo_archivo,
+                            d.clave as clave_tipo_archivo
+                        FROM tbpacientes_archivos a
+                        LEFT JOIN ctpacientes b ON a.id_paciente = b.id
+                        LEFT JOIN tbagenda_citas c ON a.id_agenda_cita = c.id
+                        LEFT JOIN cttipo_archivos d ON a.id_tipo_archivo = d.id
+                        WHERE a.id_paciente = :id_paciente";
+
+            $values = array(
+                'id_paciente'   => $id_paciente
+            );
+
+            if (!empty($id)){
+                $phql           .= ' AND a.id = :id ';
+                $values['id']   = $id;
+            }
+
+            $phql   .= ' ORDER BY d.nombre,a.nombre_original ';
+
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $arr_return = array();
+            while ($row = $result->fetch()) {
+                $arr_return[]   = $row;
+            }
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->get('/ctareas_enfoque/show', function () use ($app,$db,$request) {
+        try{
+            // Ejecutar el query y obtener el resultado
+            $phql   = " SELECT 
+                            a.*, 
+                            b.id as id_subarea_enfoque,
+                            b.nombre as nombre_subarea
+                        FROM ctareas_enfoque a  
+                        LEFT JOIN ctareas_enfoque_subarea b ON a.id = b.id_area_enfoque
+                        ORDER BY a.nombre ASC,b.nombre";
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $arr_return = array();
+            while ($row = $result->fetch()) {
+                if (!isset($arr_return[$row['clave']])){
+                    $arr_return[$row['clave']]['info']  = array(
+                        'clave'         => $row['clave'],
+                        'nombre'        => $row['nombre'],
+                        'descripcion'   => $row['descripcion'],
+                    );
+                }
+
+                $arr_return[$row['clave']]['subarea'][] = array(
+                    'id_subarea_enfoque'    => $row['id_subarea_enfoque'],
+                    'nombre'                => $row['nombre_subarea'],
+                );
+                
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    $app->post('/ctpacientes/save_subareas_focus', function () use ($app,$db,$request) {
+        $conexion = $db; 
+        try {
+            $conexion->begin();
+    
+            //  OBTENER PARAMETROS
+            $id_paciente    = $request->getPost('id_paciente') ?? null;
+            $obj_info       = $request->getPost('obj_info') ?? array();
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_profesional = null;
+            while ($row = $result->fetch()) {
+                $id_profesional = $row['id_profesional'];
+            }
+
+            if ($id_profesional == null){
+                throw new Exception("Solo los profesionales pueden capturar este registro", 401);
+            }
+
+            //  SE BORRAN TODOS LOS REGISTROS DEL PACIENTE Y PROFESIONAL
+            $phql   = "DELETE FROM tbpacientes_areas_refuerzo WHERE id_paciente = :id_paciente AND id_profesional_registro = :id_profesional";
+            $result = $conexion->execute($phql,array(
+                'id_paciente'       => $id_paciente,
+                'id_profesional'    => $id_profesional,
+            ));
+
+            //  SE CREAN LOS NUEVOS REGISTROS
+            $phql   = "INSERT INTO tbpacientes_areas_refuerzo (id_paciente,id_profesional_registro,id_subarea_enfoque)
+                        VALUES (:id_paciente,:id_profesional,:id_subarea_enfoque)";
+
+            foreach($obj_info as $id_subarea_enfoque){
+                $result = $conexion->execute($phql,array(
+                    'id_paciente'           => $id_paciente,
+                    'id_profesional'        => $id_profesional,
+                    'id_subarea_enfoque'    => $id_subarea_enfoque
+                ));
+            }
+            
+            $conexion->commit();
+
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            $conexion->rollback();
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    $app->get('/ctpacientes/get_clinical_data', function () use ($app,$db,$request) {
+        try{
+            //  PARAMETROS
+            $id_paciente        = $request->getQuery('id_paciente') ?? null;
+            $id_agenda_cita     = $request->getQuery('id_agenda_cita') ?? null;
+            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            
+            $arr_return = array(
+                'info_paciente'         => array(),
+                'motivo_consulta'       => array(),
+                'exploracion_fisica'    => array(),
+                'info_cita'             => array(),
+                'recetas_medicas'       => array(),
+            );
+            
+            if (empty($id_paciente) && empty($id_agenda_cita)){
+                throw new Exception("Parametro de id invalido");
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita";
+                $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                // Recorrer los resultados
+                $flag_exists    = false;
+                while ($row = $result->fetch()) {
+                    $flag_exists    = true;
+                    $id_paciente    = $row['id_paciente'];
+                    $arr_return['info_cita']    = $row;
+                }
+
+                if (!$flag_exists){
+                    throw new Exception("Cita inexistente en la agenda", 404);
+                }
+            }
+        
+            // Definir el query SQL
+            $phql   = "SELECT  
+                            a.*,
+                            (a.primer_apellido|| ' ' ||COALESCE(a.segundo_apellido,'')||' '||a.nombre) as nombre_completo,
+                            c.nombre as locacion_registro,
+                            a.fecha_nacimiento,
+                            CASE 
+                                WHEN fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 1, '0')
+                                ELSE NULL
+                            END AS edad_actual
+                        FROM ctpacientes a 
+                        LEFT JOIN ctlocaciones c ON a.id_locacion_registro = c.id
+                        WHERE a.id = :id_paciente ";
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
+                $arr_return['info_paciente']    = $row;
+            }
+
+            //  MOTIVOS DE CONSULTA
+            $phql   = " SELECT  
+                            a.*
+                        FROM tbpacientes_motivo_consulta a 
+                        LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
+                        WHERE b.id_paciente = :id_paciente ORDER BY a.fecha_registro DESC";
+
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $row['fecha_registro']              = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                $arr_return['motivo_consulta'][]    = $row;
+            }
+
+            //  EXPLORACION FISICA
+            $phql   = " SELECT  
+                            a.*
+                        FROM tbpacientes_exploracion_fisica a 
+                        LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
+                        WHERE b.id_paciente = :id_paciente ORDER BY a.fecha_registro DESC";
+    
+            $result = $db->query($phql,array(
+                'id_paciente'    => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while ($row = $result->fetch()) {
+                $row['fecha_registro']              = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                $arr_return['exploracion_fisica'][] = $row;
+            }
+
+            //  SE BUSCAN TODAS LAS RECETAS EMITIDAS DE ESTE PACIENTE
+            $phql   = " SELECT * 
+                        FROM tbpacientes_receta_medica 
+                        WHERE id_paciente = :id_paciente
+                        ORDER BY fecha_creacion DESC";
+            
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while ($row = $result->fetch()) {
+                $row['fecha_ultima_edicion']        = FuncionesGlobales::formatearFecha($row['fecha_ultima_edicion']);
+                $row['fecha_creacion']              = FuncionesGlobales::formatearFecha($row['fecha_creacion']);
+                $arr_return['recetas_medicas'][]    = $row;
+            }
+
+            return json_encode($arr_return);
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'Created');
+            return $response;
+        }
+        
+    });
+
+    $app->post('/ctpacientes/save_exploracion_fisica', function () use ($app,$db,$request) {
+        try {
+    
+            //  OBTENER PARAMETROS
+            $id_paciente    = $request->getPost('id_paciente') ?? null;
+            $id_agenda_cita = $request->getPost('id_agenda_cita') ?? null;
+            $obj_info       = $request->getPost('obj_info') ?? array();
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $imc                = null;
+
+            if (empty($id_paciente) && empty($id_agenda_cita)){
+                throw new Exception("Parametro de id invalido");
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id_agenda_cita";
+                $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                // Recorrer los resultados
+                $flag_exists    = false;
+                while ($row = $result->fetch()) {
+                    $flag_exists    = true;
+                    $id_paciente    = $row['id_paciente'];
+                }
+
+                if (!$flag_exists){
+                    throw new Exception("Cita inexistente en la agenda", 404);
+                }
+            }
+
+            if (isset($obj_info['peso']) && isset($obj_info['altura'])){
+                $imc    = FuncionesGlobales::calcularIMC($obj_info['peso'],$obj_info['altura']);
+            }
+
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_profesional = null;
+            while ($row = $result->fetch()) {
+                $id_profesional = $row['id_profesional'];
+            }
+
+            //  SI EXISTEN REGISTROS CAPTURADOS DEBE DE SER UNA EDICION
+            $phql   = "SELECT * FROM tbpacientes_exploracion_fisica WHERE id_agenda_cita = :id_agenda_cita";
+            $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $flag_exists    = false;
+            while ($row = $result->fetch()) {
+                $flag_exists    = true;
+                //  SE HACE EL UPDATE
+                $phql   = "UPDATE tbpacientes_exploracion_fisica SET 
+                                peso = :peso,
+                                altura = :altura,
+                                imc = :imc,
+                                temperatura = :temperatura,
+                                frecuencia_cardiaca = :frecuencia_cardiaca,
+                                frecuencia_respiratoria = :frecuencia_respiratoria,
+                                presion_arterial_sistolica = :presion_arterial_sistolica,
+                                presion_arterial_diastolica = :presion_arterial_diastolica,
+                                saturacion_oxigeno = :saturacion_oxigeno,
+                                alergias = :alergias,
+                                observaciones = :observaciones
+                            WHERE id = :id";
+                
+                $values = array(
+                    'peso'                          => isset($obj_info['peso']) ? $obj_info['peso'] : null,
+                    'altura'                        => isset($obj_info['altura']) ? $obj_info['altura'] : null,
+                    'imc'                           => $imc,
+                    'temperatura'                   => isset($obj_info['temperatura']) ? $obj_info['temperatura'] : null,
+                    'frecuencia_cardiaca'           => isset($obj_info['frecuencia_cardiaca']) ? $obj_info['frecuencia_cardiaca'] : null,
+                    'frecuencia_respiratoria'       => isset($obj_info['frecuencia_respiratoria']) ? $obj_info['frecuencia_respiratoria'] : null,
+                    'presion_arterial_sistolica'    => isset($obj_info['presion_arterial_sistolica']) ? $obj_info['presion_arterial_sistolica'] : null,
+                    'presion_arterial_diastolica'   => isset($obj_info['presion_arterial_diastolica']) ? $obj_info['presion_arterial_diastolica'] : null,
+                    'saturacion_oxigeno'            => isset($obj_info['saturacion_oxigeno']) ? $obj_info['saturacion_oxigeno'] : null,
+                    'alergias'                      => isset($obj_info['alergias']) ? $obj_info['alergias'] : null,
+                    'observaciones'                 => isset($obj_info['observaciones']) ? $obj_info['observaciones'] : null,
+                    'id'                            => $row['id']
+                );
+
+                $result = $db->query($phql,$values);
+
+            }
+
+            //  SE HACE EL INSERT
+            if (!$flag_exists){
+                $phql   = "INSERT INTO tbpacientes_exploracion_fisica (
+                                id_paciente,
+                                id_agenda_cita,
+                                peso,
+                                altura,
+                                imc,
+                                temperatura,
+                                frecuencia_cardiaca,
+                                frecuencia_respiratoria,
+                                presion_arterial_sistolica,
+                                presion_arterial_diastolica,
+                                saturacion_oxigeno,
+                                alergias,
+                                observaciones,
+                                id_profesional_registro
+                            )
+                            VALUES (
+                                :id_paciente,
+                                :id_agenda_cita,
+                                :peso,
+                                :altura,
+                                :imc,
+                                :temperatura,
+                                :frecuencia_cardiaca,
+                                :frecuencia_respiratoria,
+                                :presion_arterial_sistolica,
+                                :presion_arterial_diastolica,
+                                :saturacion_oxigeno,
+                                :alergias,
+                                :observaciones,
+                                :id_profesional_registro
+                            )";
+                
+                $values = array(
+                    'id_paciente'                   => $id_paciente,
+                    'id_agenda_cita'                => $id_agenda_cita,
+                    'peso'                          => isset($obj_info['peso']) ? $obj_info['peso'] : null,
+                    'altura'                        => isset($obj_info['altura']) ? $obj_info['altura'] : null,
+                    'imc'                           => $imc,
+                    'temperatura'                   => isset($obj_info['temperatura']) ? $obj_info['temperatura'] : null,
+                    'frecuencia_cardiaca'           => isset($obj_info['frecuencia_cardiaca']) ? $obj_info['frecuencia_cardiaca'] : null,
+                    'frecuencia_respiratoria'       => isset($obj_info['frecuencia_respiratoria']) ? $obj_info['frecuencia_respiratoria'] : null,
+                    'presion_arterial_sistolica'    => isset($obj_info['presion_arterial_sistolica']) ? $obj_info['presion_arterial_sistolica'] : null,
+                    'presion_arterial_diastolica'   => isset($obj_info['presion_arterial_diastolica']) ? $obj_info['presion_arterial_diastolica'] : null,
+                    'saturacion_oxigeno'            => isset($obj_info['saturacion_oxigeno']) ? $obj_info['saturacion_oxigeno'] : null,
+                    'alergias'                      => isset($obj_info['alergias']) ? $obj_info['alergias'] : null,
+                    'observaciones'                 => isset($obj_info['observaciones']) ? $obj_info['observaciones'] : null,
+                    'id_profesional_registro'       => $id_profesional
+                );
+
+                $result = $db->query($phql,$values);
+            }
+
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    // Ruta principal para obtener todos los usuarios
+    $app->get('/ctpacientes/show_exploracion_fisica', function () use ($app,$db,$request) {
+        try{
+            //  PARAMETROS
+            $id_paciente        = $request->getQuery('id_paciente');
+            $id_profesional     = $request->getQuery('id_profesional');
+            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            $id_agenda_cita     = $request->getQuery('id_agenda_cita') ?? null;
+            
+            // Definir el query SQL
+            $phql   = " SELECT  
+                            a.*
+                        FROM tbpacientes_exploracion_fisica a 
+                        LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
+                        WHERE 1 = 1 ";
+            $values = array();
+
+            if (!empty($id_agenda_cita)){
+                $phql           .= " AND a.id_agenda_cita = :id_agenda_cita ";
+                $values['id_agenda_cita']   = $id_agenda_cita;
+            }
+    
+            if (!empty($id_paciente)){
+                $phql           .= " AND (a.id_paciente = :id_paciente OR b.id_paciente = :id_paciente)";
+                $values['id_paciente']  = $id_paciente;
+            }
+
+            $phql   .= " ORDER BY a.fecha_registro DESC ";
+
+            if ($request->hasQuery('offset')){
+                $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
+            }
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $data = [];
+            while ($row = $result->fetch()) {
+                $row['fecha_registro']  = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                $data[] = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'Created');
+            return $response;
+        }
+        
+    });
+
+    // Ruta principal para obtener todos los usuarios
+    $app->get('/ctpacientes/show_motivo_consulta', function () use ($app,$db,$request) {
+        try{
+            //  PARAMETROS
+            $id_paciente        = $request->getQuery('id_paciente');
+            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            $id_agenda_cita     = $request->getQuery('id_agenda_cita') ?? null;
+            
+            // Definir el query SQL
+            $phql   = " SELECT  
+                            a.*
+                        FROM tbpacientes_motivo_consulta a 
+                        LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
+                        WHERE 1 = 1 ";
+            $values = array();
+
+            if (!empty($id_agenda_cita)){
+                $phql           .= " AND a.id_agenda_cita = :id_agenda_cita ";
+                $values['id_agenda_cita']   = $id_agenda_cita;
+            }
+    
+            if (!empty($id_paciente)){
+                $phql           .= " AND (a.id_paciente = :id_paciente OR b.id_paciente = :id_paciente)";
+                $values['id_paciente']  = $id_paciente;
+            }
+
+            $phql   .= " ORDER BY a.fecha_registro DESC ";
+
+            if ($request->hasQuery('offset')){
+                $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
+            }
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $data = [];
+            while ($row = $result->fetch()) {
+                $row['fecha_registro']  = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                $data[] = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'Created');
+            return $response;
+        }
+        
+    });
+
+    $app->post('/ctpacientes/save_motivo_consulta', function () use ($app,$db,$request) {
+        try {
+    
+            //  OBTENER PARAMETROS
+            $id_paciente    = $request->getPost('id_paciente') ?? null;
+            $id_agenda_cita = $request->getPost('id_agenda_cita') ?? null;
+            $obj_info       = $request->getPost('obj_info') ?? array();
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $id_usuario_registro    = null;
+
+            if (empty($id_paciente) && empty($id_agenda_cita)){
+                throw new Exception("Parametro de id invalido");
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   = " SELECT 
+                                *,
+                                TO_CHAR(hora_inicio, 'HH24:MI') AS start,
+                                TO_CHAR(hora_termino, 'HH24:MI') AS end
+                            FROM tbagenda_citas WHERE id = :id_agenda_cita";
+                $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                // Recorrer los resultados
+                $flag_exists    = false;
+                while ($row = $result->fetch()) {
+                    $flag_exists    = true;
+                    $id_paciente    = $row['id_paciente'];
+                }
+
+                if (!$flag_exists){
+                    throw new Exception("Cita inexistente en la agenda", 404);
+                }
+            }
+
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $id_usuario_registro    = $row['id'];
+            }
+
+            //  SI EXISTEN REGISTROS CAPTURADOS DEBE DE SER UNA EDICION
+            $phql   = "SELECT * FROM tbpacientes_motivo_consulta WHERE id_agenda_cita = :id_agenda_cita";
+            $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $flag_exists    = false;
+            while ($row = $result->fetch()) {
+                $flag_exists    = true;
+                //  SE HACE EL UPDATE
+                $phql   = "UPDATE tbpacientes_motivo_consulta SET 
+                                motivo_consulta = :motivo_consulta,
+                                padecimiento_actual = :padecimiento_actual,
+                                antecedentes_relevantes = :antecedentes_relevantes
+                            WHERE id = :id ";
+                
+                $values = array(
+                    'motivo_consulta'           => $obj_info['motivo_consulta'],
+                    'padecimiento_actual'       => $obj_info['padecimiento_actual'],
+                    'antecedentes_relevantes'   => $obj_info['antecedentes_relevantes'],
+                    'id'                        => $row['id']
+                );
+
+                $result = $db->query($phql,$values);
+
+            }
+
+            //  SE HACE EL INSERT
+            if (!$flag_exists){
+                $phql   = "INSERT INTO tbpacientes_motivo_consulta (
+                                id_paciente,
+                                id_agenda_cita,
+                                motivo_consulta,
+                                padecimiento_actual,
+                                antecedentes_relevantes,
+                                id_usuario_registro
+                            )
+                            VALUES (
+                                :id_paciente,
+                                :id_agenda_cita,
+                                :motivo_consulta,
+                                :padecimiento_actual,
+                                :antecedentes_relevantes,
+                                :id_usuario_registro
+                            )";
+                
+                $values = array(
+                    'id_paciente'               => $id_paciente,
+                    'id_agenda_cita'            => $id_agenda_cita,
+                    'motivo_consulta'           => $obj_info['motivo_consulta'],
+                    'padecimiento_actual'       => $obj_info['padecimiento_actual'],
+                    'antecedentes_relevantes'   => $obj_info['antecedentes_relevantes'],
+                    'id_usuario_registro'       => $id_usuario_registro
+                );
+
+                $result = $db->query($phql,$values);
+            }
+
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    $app->post('/ctpacientes/save_receta', function () use ($app,$db,$request) {
+        try {
+    
+            //  OBTENER PARAMETROS
+            $id_paciente    = $request->getPost('id_paciente') ?? null;
+            $id_agenda_cita = $request->getPost('id_agenda_cita') ?? null;
+            $obj_info       = $request->getPost('obj_info') ?? array();
+            $usuario_solicitud  = $request->getPost('usuario_solicitud');
+            $id_usuario_captura = null;
+            $id_receta          = null;
+
+            if (empty($id_paciente) && empty($id_agenda_cita)){
+                throw new Exception("Parametro de id invalido");
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   = " SELECT 
+                                *,
+                                TO_CHAR(hora_inicio, 'HH24:MI') AS start,
+                                TO_CHAR(hora_termino, 'HH24:MI') AS end
+                            FROM tbagenda_citas WHERE id = :id_agenda_cita";
+                $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                // Recorrer los resultados
+                $flag_exists    = false;
+                while ($row = $result->fetch()) {
+                    $flag_exists    = true;
+                    $id_paciente    = $row['id_paciente'];
+                }
+
+                if (!$flag_exists){
+                    throw new Exception("Cita inexistente en la agenda", 404);
+                }
+            }
+
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $id_usuario_captura = $row['id'];
+            }
+
+            //  SI EXISTEN REGISTROS CAPTURADOS DEBE DE SER UNA EDICION
+            $phql   = "SELECT * FROM tbpacientes_receta_medica WHERE id_agenda_cita = :id_agenda_cita";
+            $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $flag_exists    = false;
+            while ($row = $result->fetch()) {
+                $id_receta      = $row['id'];
+                $flag_exists    = true;
+                //  SE HACE EL UPDATE
+                $phql   = "UPDATE tbpacientes_receta_medica SET 
+                                diagnostico = :diagnostico,
+                                tratamiento = :tratamiento,
+                                fecha_ultima_edicion = NOW()
+                            WHERE id = :id ";
+                
+                $values = array(
+                    'diagnostico'   => $obj_info['diagnostico'],
+                    'tratamiento'   => $obj_info['tratamiento'],
+                    'id'            => $row['id']
+                );
+
+                $result = $db->query($phql,$values);
+
+            }
+
+            //  SE HACE EL INSERT
+            if (!$flag_exists){
+                $phql   = "INSERT INTO tbpacientes_receta_medica (
+                                id_paciente,
+                                id_agenda_cita,
+                                diagnostico,
+                                tratamiento,
+                                id_usuario_captura
+                            )
+                            VALUES (
+                                :id_paciente,
+                                :id_agenda_cita,
+                                :diagnostico,
+                                :tratamiento,
+                                :id_usuario_captura
+                            ) RETURNING *";
+                
+                $values = array(
+                    'id_paciente'       => $id_paciente,
+                    'id_agenda_cita'    => $id_agenda_cita,
+                    'diagnostico'       => $obj_info['diagnostico'],
+                    'tratamiento'       => $obj_info['tratamiento'],
+                    'id_usuario_captura'        => $id_usuario_captura
+                );
+
+                $result = $db->query($phql,$values);
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                while ($row = $result->fetch()) {
+                    $id_receta  = $row['id'];
+                }
+            }
+
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent(array('id_receta' => $id_receta));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    $app->get('/ctpacientes/show_receta', function () use ($app,$db,$request) {
+        try {
+    
+            //  OBTENER PARAMETROS
+            $id_paciente    = $request->getQuery('id_paciente') ?? null;
+            $id_agenda_cita = $request->getQuery('id_agenda_cita') ?? null;
+            $id_receta      = $request->getQuery('id_receta') ?? null;
+            $get_historico  = $request->getQuery('get_historico') ?? null;
+            $arr_return     = array();
+            $flag_has_record    = false;
+
+            if (empty($id_paciente) && empty($id_agenda_cita) && empty($id_receta)){
+                throw new Exception("Parametro de id invalido");
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   = " SELECT 
+                                *,
+                                TO_CHAR(hora_inicio, 'HH24:MI') AS start,
+                                TO_CHAR(hora_termino, 'HH24:MI') AS end
+                            FROM tbagenda_citas WHERE id = :id_agenda_cita";
+                $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                // Recorrer los resultados
+                $flag_exists    = false;
+                while ($row = $result->fetch()) {
+                    $flag_exists    = true;
+                    $id_paciente    = $row['id_paciente'];
+                }
+
+                if (!$flag_exists){
+                    throw new Exception("Cita inexistente en la agenda", 404);
+                }
+            }
+
+            //  SI EXISTEN REGISTROS CAPTURADOS DEBE DE SER UNA EDICION
+            $phql   = " SELECT 
+                            a.id as id_receta,
+                            a.diagnostico,
+                            a.tratamiento,
+                            a.fecha_ultima_edicion,
+                            (f.primer_apellido|| ' ' ||COALESCE(f.segundo_apellido,'')||' '||f.nombre) as nombre_completo,
+                            (c.nombre|| ' ' ||c.primer_apellido||' '||COALESCE(c.segundo_apellido,'')) as nombre_profesional,
+                            c.titulo,
+                            c.cedula_profesional,
+                            c.correo_electronico,
+                            d.nombre as nombre_locacion,
+                            d.direccion,
+                            d.telefono,
+                            d.celular,
+                            current_date as fecha_actual,
+                            e.fecha_registro,              
+                            e.peso,                        
+                            e.altura,                      
+                            e.imc,                         
+                            e.temperatura,                 
+                            e.frecuencia_cardiaca,         
+                            e.frecuencia_respiratoria,     
+                            e.presion_arterial_sistolica,  
+                            e.presion_arterial_diastolica, 
+                            e.saturacion_oxigeno,          
+                            e.alergias,                    
+                            e.observaciones            
+                        FROM tbpacientes_receta_medica a
+                        LEFT JOIN tbagenda_citas b ON a.id_agenda_cita = b.id
+                        LEFT JOIN ctprofesionales c ON b.id_profesional = c.id
+                        LEFT JOIN ctlocaciones d ON b.id_locacion = d.id
+                        LEFT JOIN tbpacientes_exploracion_fisica e ON b.id = e.id_agenda_cita
+                        LEFT JOIN ctpacientes f ON a.id_paciente = f.id
+                        WHERE 1 = 1 ";
+
+            $values = array();
+
+            if (!empty($id_receta)){
+                $phql   .= ' AND a.id = :id_receta ';
+                $values['id_receta']    = $id_receta;
+            }
+
+            if (!empty($id_agenda_cita)){
+                $phql   .= ' AND b.id = :id_agenda_cita ';
+                $values['id_agenda_cita']   = $id_agenda_cita;
+            }
+
+            if (!empty($id_paciente)){
+                $phql   .= ' AND a.id_paciente = :id_paciente ';
+                $values['id_paciente']  = $id_paciente;
+            }
+
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $flag_exists    = false;
+            while ($row = $result->fetch()) {
+                $row['presion_arterial']        = $row['presion_arterial_sistolica'] != null ? ($row['presion_arterial_sistolica'].'/'.$row['presion_arterial_diastolica']) : '';
+                $row['fecha_ultima_edicion']    = FuncionesGlobales::formatearFecha($row['fecha_ultima_edicion']);
+                $arr_return[]                   = $row;
+                $flag_has_record                = true;
+            }
+
+            if ($get_historico && !empty($id_agenda_cita)){
+                $arr_return = array(
+                    'info_receta'   => count($arr_return) > 0 ? $arr_return[0] : [],
+                    'info_exploracion_fisica'   => [],
+                    'info_motivo_consulta'      => []
+                );
+
+                //  SE BUSCA EL MOTIVO DE CONSULTA DE LA CITA
+                //  MOTIVOS DE CONSULTA
+                $phql   = " SELECT  
+                                a.*
+                            FROM tbpacientes_motivo_consulta a 
+                            WHERE a.id_agenda_cita = :id_agenda_cita ORDER BY a.fecha_registro DESC";
+
+                // Ejecutar el query y obtener el resultado
+                $result = $db->query($phql,array(
+                    'id_agenda_cita'    => $id_agenda_cita
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                // Recorrer los resultados
+                while ($row = $result->fetch()) {
+                    $row['fecha_registro']              = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                    $arr_return['info_motivo_consulta'] = $row;
+                    $flag_has_record                    = true;
+                }
+
+                //  EXPLORACION FISICA
+                $phql   = " SELECT  
+                                a.*
+                            FROM tbpacientes_exploracion_fisica a 
+                            WHERE a.id_agenda_cita = :id_agenda_cita ORDER BY a.fecha_registro DESC";
+        
+                $result = $db->query($phql,array(
+                    'id_agenda_cita'    => $id_agenda_cita
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                while ($row = $result->fetch()) {
+                    $row['presion_arterial']                = $row['presion_arterial_sistolica'] != null ? ($row['presion_arterial_sistolica'].'/'.$row['presion_arterial_diastolica']) : '';
+                    $row['fecha_registro']                  = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                    $arr_return['info_exploracion_fisica']  = $row;
+                    $flag_has_record                        = true;
+                }
+            }
+
+            if (!$flag_has_record){
+                throw new Exception("No existe captura de algún dato de exploración o receta realizada para esta cita", 404);
+            }
+
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+
+
+    
 };
