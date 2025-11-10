@@ -13,55 +13,119 @@ return function (Micro $app,$di) {
     // Ruta principal para obtener todos los registros
     $app->get('/dashboard_menu/show', function () use ($app,$db,$request) {
         try{
-            $clave          = $request->getQuery('clave');
-            $nombre         = $request->getQuery('nombre');
-            $from_catalog   = $request->getQuery('from_catalog') ?? null;
-        
-            // Definir el query SQL
-            $phql   = "SELECT * FROM ctvariables_sistema a WHERE 1 = 1";
-            $values = array();
+            $id_locacion    = $request->getQuery('id_locacion');
+            $id_profesional = $request->getQuery('id_profesional');
 
-            if ($from_catalog){
-                if (!empty($clave) && (empty($accion) || $accion != 'login')) {
-                    $phql           .= " AND lower(a.clave) ILIKE :clave";
-                    $values['clave'] = "%".FuncionesGlobales::ToLower($clave)."%";
-                }
-    
-                if (!empty($nombre)) {
-                    $phql           .= " AND lower(a.nombre) ILIKE :nombre";
-                    $values['nombre'] = "%".FuncionesGlobales::ToLower($nombre)."%";
-                }
-            } else {
-                if (!empty($clave) && (empty($accion) || $accion != 'login')) {
-                    $phql           .= " AND a.clave = :clave ";
-                    $values['clave'] = $clave;
-                }
-    
-                if (!empty($nombre)) {
-                    $phql           .= " AND a.nombre = :nombre";
-                    $values['nombre'] = $nombre;
-                }
-            }
-            
-            $phql   .= ' ORDER BY a.clave,a.nombre ';
+            $fecha_bd   = null;
+            $hora_bd    = null;
 
-            if ($request->hasQuery('offset')){
-                $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
+            $phql = "SELECT (CURRENT_DATE + INTERVAL '1 day')::DATE as CURRENT_DATE, TO_CHAR(NOW(), 'HH24:MI:SS') AS hora_actual";
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                $fecha_bd   = $row['current_date'];
+                $hora_bd    = $row['hora_actual'];
             }
-    
-            // Ejecutar el query y obtener el resultado
+
+            $datetime = new DateTime($fecha_bd);
+
+            // Clonamos para no alterar el original
+            $fecha_inicio_semana  = clone $datetime;
+            $fecha_termino_semana = clone $datetime;
+
+            // Ajustamos al inicio (lunes) y fin (domingo)
+            $fecha_inicio_semana->modify('monday this week');
+            $fecha_termino_semana->modify('sunday this week');
+
+            $fecha_inicio_param     = $fecha_inicio_semana->format('Y-m-d');
+            $fecha_termino_param    = $fecha_termino_semana->format('Y-m-d');
+
+            // Formatos
+
+            // Etiqueta manual (sin intl)
+            $dias = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+            $meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+            $dia_semana = $dias[$datetime->format('w')];
+            $dia = $datetime->format('j');
+            $mes = $meses[$datetime->format('n') - 1];
+
+            $fecha_actual_label = ucfirst("$dia_semana, $dia de $mes");
+
+            // Retorno final
+            $arr_return = array(
+                'fecha_actual'          => $fecha_bd,
+                'hora_bd'               => $hora_bd,
+                'fecha_actual_label'    => $fecha_actual_label,
+                'fecha_inicio_semana'   => $fecha_inicio_semana->format('d/m/Y'),
+                'fecha_termino_semana'  => $fecha_termino_semana->format('d/m/Y'),
+                'citas'                 => [],
+            );
+
+            $phql   = " SELECT 
+                            a.id as id_agenda_cita,
+                            a.id_locacion,
+                            a.id_profesional,
+                            a.dia,
+                            a.fecha_cita,
+                            a.id_paciente,
+                            a.activa,
+                            TO_CHAR(a.hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(a.hora_termino, 'HH24:MI') AS hora_termino,
+                            (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
+                            (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) as nombre_profesional
+                        FROM tbagenda_citas a 
+                        LEFT JOIN ctpacientes b ON a.id_paciente = b.id
+                        LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
+                        WHERE a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
+
+            $values = array(
+                'fecha_inicio'  => $fecha_inicio_param,
+                'fecha_termino' => $fecha_termino_param
+            );
+
+            if (!empty($id_locacion)){
+                $phql   = ' AND a.id_locacion = :id_locacion';
+                $values['id_locacion']  = $id_locacion;
+            }
+
+            if (!empty($id_profesional)){
+                $phql   = ' AND a.id_profesional = :id_profesional';
+                $values['id_profesional']   = $id_profesional;
+            }
+
             $result = $db->query($phql,$values);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-    
+
             // Recorrer los resultados
-            $data = [];
             while ($row = $result->fetch()) {
-                $data[] = $row;
+                $phql   = " SELECT 
+                                a.id_agenda_cita,
+                                b.clave,
+                                b.nombre as nombre_servicio,
+                                b.codigo_color
+                            FROM tbagenda_citas_servicios a 
+                            LEFT JOIN ctservicios b ON a.id_servicio = b.id
+                            WHERE a.id_agenda_cita = :id_agenda_cita 
+                            ORDER BY b.costo DESC";
+                $result_servicios = $db->query($phql,array('id_agenda_cita' => $row['id_agenda_cita']));
+                $result_servicios->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result_servicios){
+                    while($data_servicios = $result_servicios->fetch()){
+                        $row['servicios'][] = $data_servicios;
+                    }
+                }
+
+                $arr_return['citas'][]  = $row;
             }
+            
     
             // Devolver los datos en formato JSON
             $response = new Response();
-            $response->setJsonContent($data);
+            $response->setJsonContent($arr_return);
             $response->setStatusCode(200, 'OK');
             return $response;
         }catch (\Exception $e){
