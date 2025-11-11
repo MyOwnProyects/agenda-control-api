@@ -19,14 +19,16 @@ return function (Micro $app,$di) {
             $fecha_bd   = null;
             $hora_bd    = null;
 
-            $phql = "SELECT (CURRENT_DATE + INTERVAL '1 day')::DATE as CURRENT_DATE, TO_CHAR(NOW(), 'HH24:MI:SS') AS hora_actual";
+            //  QUERY PARA DOMINGO
+            // $phql = "SELECT (CURRENT_DATE + INTERVAL '1 day')::DATE as CURRENT_DATE, TO_CHAR(NOW(), 'HH24:MI:SS') AS hora_actual";
+            $phql = "SELECT CURRENT_DATE, TO_CHAR(NOW(), 'HH24:MI:SS') AS hora_actual";
             $result = $db->query($phql);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
             // Recorrer los resultados
             while ($row = $result->fetch()) {
                 $fecha_bd   = $row['current_date'];
-                $hora_bd    = $row['hora_actual'];
+                $hora_bd    = '14:19:50';//$row['hora_actual'];
             }
 
             $datetime = new DateTime($fecha_bd);
@@ -62,6 +64,7 @@ return function (Micro $app,$di) {
                 'fecha_inicio_semana'   => $fecha_inicio_semana->format('d/m/Y'),
                 'fecha_termino_semana'  => $fecha_termino_semana->format('d/m/Y'),
                 'citas'                 => [],
+                'dia_semana'            => $dia_semana
             );
 
             $phql   = " SELECT 
@@ -79,7 +82,9 @@ return function (Micro $app,$di) {
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
-                        WHERE a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
+                        LEFT JOIN ctmotivos_cancelacion_cita d ON a.id_motivo_cancelacion = d.id
+                        WHERE a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino 
+                        AND a.activa <> 2 AND (d.visible IS NULL OR d.visible = 1) ";
 
             $values = array(
                 'fecha_inicio'  => $fecha_inicio_param,
@@ -95,6 +100,8 @@ return function (Micro $app,$di) {
                 $phql   = ' AND a.id_profesional = :id_profesional';
                 $values['id_profesional']   = $id_profesional;
             }
+
+            $phql   .= ' ORDER BY a.fecha_cita ASC, a.hora_inicio ASC,  b.primer_apellido, b.segundo_apellido, b.nombre';
 
             $result = $db->query($phql,$values);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
