@@ -14,10 +14,32 @@ return function (Micro $app,$di) {
     $app->get('/dashboard_menu/show', function () use ($app,$db,$request) {
         try{
             $id_locacion    = $request->getQuery('id_locacion');
-            $id_profesional = $request->getQuery('id_profesional');
+            $clave_usuario  = $request->getQuery('usuario_solicitud') ?? null;
 
             $fecha_bd   = null;
             $hora_bd    = null;
+
+            //  SE BUSCA EL TIPO USUARIO, SI ES ADMIN O RECEPCIONISTA DEJA VER TODAS LAS CITAS
+            //  DE LO CONTRARIO MOSTRARA SOLO LAS CITAS DEL PROFESIONAL DEL MISMO USUARIO
+            //  SE BUSCA EL ID DEL USUARIO
+            $phql   = " SELECT a.*,b.clave as clave_tipo_usuario 
+                        FROM ctusuarios a 
+                        LEFT JOIN cttipo_usuarios b ON a.id_tipo_usuario = b.id 
+                        WHERE a.clave = :clave_usuario";
+
+            $result = $db->query($phql,array('clave_usuario' => $clave_usuario));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            $clave_tipo_usuario     = null;
+            $id_profesional_usuario = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                    $clave_tipo_usuario     = $data['clave_tipo_usuario'];
+                    $id_profesional_usuario = $data['id_profesional'];
+                }
+            }
 
             //  QUERY PARA DOMINGO
             // $phql = "SELECT (CURRENT_DATE + INTERVAL '1 day')::DATE as CURRENT_DATE, TO_CHAR(NOW(), 'HH24:MI:SS') AS hora_actual";
@@ -28,7 +50,8 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             while ($row = $result->fetch()) {
                 $fecha_bd   = $row['current_date'];
-                $hora_bd    = '14:19:50';//$row['hora_actual'];
+                // $hora_bd    = '15:44:55';//$row['hora_actual'];
+                $hora_bd    = $row['hora_actual'];
             }
 
             $datetime = new DateTime($fecha_bd);
@@ -92,13 +115,13 @@ return function (Micro $app,$di) {
             );
 
             if (!empty($id_locacion)){
-                $phql   = ' AND a.id_locacion = :id_locacion';
+                $phql   .= ' AND a.id_locacion = :id_locacion';
                 $values['id_locacion']  = $id_locacion;
             }
 
-            if (!empty($id_profesional)){
-                $phql   = ' AND a.id_profesional = :id_profesional';
-                $values['id_profesional']   = $id_profesional;
+            if ($clave_tipo_usuario != 'user_admin' && $clave_tipo_usuario != 'RECEP'){
+                $phql   .= ' AND a.id_profesional = :id_profesional';
+                $values['id_profesional']   = $id_profesional_usuario;
             }
 
             $phql   .= ' ORDER BY a.fecha_cita ASC, a.hora_inicio ASC,  b.primer_apellido, b.segundo_apellido, b.nombre';
