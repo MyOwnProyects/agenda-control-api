@@ -102,7 +102,8 @@ return function (Micro $app,$di) {
                             a.*,
                             (a.primer_apellido|| ' ' ||COALESCE(a.segundo_apellido,'')||' '||a.nombre) as nombre_completo,
                             b.clave as clave_tipo_usuario, 
-                            b.nombre as nombre_tipo_usuario 
+                            b.nombre as nombre_tipo_usuario,
+                            a.id_profesional
                         FROM ctusuarios a 
                         LEFT JOIN cttipo_usuarios b ON a.id_tipo_usuario = b.id 
                         WHERE 1 = 1";
