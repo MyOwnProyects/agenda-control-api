@@ -133,6 +133,7 @@ return function (Micro $app,$di) {
             $citas_pagadas      = $request->getQuery('citas_pagadas') ?? null;
             $citas_adeudo       = $request->getQuery('citas_adeudo') ?? null;
             $citas_pagadas_rango    = $request->getQuery('citas_pagadas_rango') ?? null;
+            $from_digital_record    = $request->getQuery('from_digital_record') ?? null;
 
             $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
             $arr_estatus_asistencia = [
@@ -277,7 +278,11 @@ return function (Micro $app,$di) {
                 $values['fecha_termino']    = $fecha_termino;
             }
 
-            $phql   .= ' ORDER BY a.fecha_cita,a.hora_inicio,a.hora_termino ';
+            if (empty($from_digital_record)){
+                $phql   .= ' ORDER BY a.fecha_cita,a.hora_inicio,a.hora_termino ';
+            } else {
+                $phql   .= ' ORDER BY a.fecha_cita DESC,a.hora_inicio DESC,a.hora_termino DESC';
+            }
 
             if ($request->hasQuery('offset')){
                 $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
