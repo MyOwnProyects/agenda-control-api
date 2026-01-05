@@ -140,7 +140,7 @@ return function (Micro $app,$di) {
             // Definir el query SQL
             $phql   = "SELECT  
                             a.*,
-                            b.nombre as nombre_locacion,
+                            COALESCE(b.nombre,'TODAS') as nombre_locacion,
                             (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) as nombre_profesional,
                             d.clave as usuario_captura
                         FROM tbfechas_bloqueo_agenda a
@@ -200,6 +200,8 @@ return function (Micro $app,$di) {
                     $row['label_fecha'] = FuncionesGlobales::formatearFecha($row['fecha_inicio']) .' - '.FuncionesGlobales::formatearFecha($row['fecha_termino']);
                 }
 
+                $row['label_tipo_bloqueo']  = $row['tipo_bloqueo'] == 1 ? 'Locación' : 'Profesional';
+
                 $data[] = $row;
             }
     
@@ -248,6 +250,30 @@ return function (Micro $app,$di) {
 
             $id_locacion    = is_numeric($id_locacion) && $id_locacion > 0 ? $id_locacion : null;
 
+            //  SE VALIDA QUE LA FECHA NO SEA MENOR A LA VARIABLE DE CONFIURACION
+            $phql   = " SELECT 
+                            CASE 
+                                WHEN ((current_date - valor::INT) > :fecha_inicio::DATE) 
+                                THEN 0 
+                                ELSE 1 
+                            END AS flag_fecha_valida  ,
+                            (current_date - valor::INT) as fecha_valida,
+                            valor
+                        FROM ctvariables_sistema 
+                        WHERE clave = 'dias_movimientos_citas_vencidas';";
+
+            $result = $db->query($phql, [
+                'fecha_inicio' => $fecha_inicio  // Ya en formato yyyy-mm-dd
+            ]);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                if ($row['flag_fecha_valida'] == 0){
+                    throw new Exception('La fecha no puede ser menor a: '.FuncionesGlobales::formatearFecha($row['fecha_valida'],'d-m-Y'));
+                }
+            }
+
             //  SE BUSCA EL ID_PROFESIONAL DEL USUARIO
             $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
             $result = $db->query($phql,array('clave' => $usuario_solicitud));
@@ -269,14 +295,8 @@ return function (Micro $app,$di) {
 
             if ($tipo_bloqueo == 1){
 
-                if ($id_locacion == null){
-                    $phql   .= " AND id_locacion IS NULL ";
-                }
-
-                if ($id_locacion != null){
-                    $phql   .= " AND id_locacion = :id_locacion ";
-                    $values['id_locacion']  = $id_locacion;
-                }
+                $phql   .= " AND (id_locacion IS NULL OR id_locacion = :id_locacion) AND id_profesional IS NULL ";
+                $values['id_locacion']  = $id_locacion;
 
                 $result = $db->query($phql, $values);
                 $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
@@ -369,6 +389,30 @@ return function (Micro $app,$di) {
                 throw new Exception('Parámetro "Fecha de termino" vacío');
             }
 
+            //  SE VALIDA QUE LA FECHA NO SEA MENOR A LA VARIABLE DE CONFIURACION
+            $phql   = " SELECT 
+                            CASE 
+                                WHEN ((current_date - valor::INT) > :fecha_inicio::DATE) 
+                                THEN 0 
+                                ELSE 1 
+                            END AS flag_fecha_valida  ,
+                            (current_date - valor::INT) as fecha_valida,
+                            valor
+                        FROM ctvariables_sistema 
+                        WHERE clave = 'dias_movimientos_citas_vencidas';";
+
+            $result = $db->query($phql, [
+                'fecha_inicio' => $fecha_inicio  // Ya en formato yyyy-mm-dd
+            ]);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                if ($row['flag_fecha_valida'] == 0){
+                    throw new Exception('La fecha no puede ser menor a: '.FuncionesGlobales::formatearFecha($row['fecha_valida'],'d-m-Y'));
+                }
+            }
+
             //  SE BORRA EL REGISTRO ANTERIOR
             $phql   = "DELETE FROM tbfechas_bloqueo_agenda WHERE id = :id";
             $result = $conexion->query($phql,array('id' => $id_registro));
@@ -396,14 +440,8 @@ return function (Micro $app,$di) {
 
             if ($tipo_bloqueo == 1){
 
-                if ($id_locacion == null){
-                    $phql   .= " AND id_locacion IS NULL ";
-                }
-
-                if ($id_locacion != null){
-                    $phql   .= " AND id_locacion = :id_locacion ";
-                    $values['id_locacion']  = $id_locacion;
-                }
+                $phql   .= " AND (id_locacion IS NULL OR id_locacion = :id_locacion) AND id_profesional IS NULL ";
+                $values['id_locacion']  = $id_locacion;
 
                 $result = $db->query($phql, $values);
                 $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
