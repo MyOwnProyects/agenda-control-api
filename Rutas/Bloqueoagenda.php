@@ -220,141 +220,7 @@ return function (Micro $app,$di) {
         
     });
 
-    $app->post('/tbfechas_bloqueo_agenda/create', function () use ($app, $db, $request) {
-        try {
-    
-            // OBTENER DATOS JSON
-            $id_locacion        = $request->getPost('id_locacion') ?? null;
-            $tipo_bloqueo       = $request->getPost('tipo_bloqueo') ?? null;
-            $fecha_inicio       = $request->getPost('fecha_inicio') ?? null;
-            $fecha_termino      = $request->getPost('fecha_termino') ?? null;
-            $id_motivo_bloqueo  = $request->getPost('id_motivo_bloqueo') ?? null;
-            $label_bloqueo      = $request->getPost('label_bloqueo') ?? null;
-            $id_profesional     = $request->getPost('id_profesional') ?? null;
-            $usuario_solicitud  = $request->getPost('usuario_solicitud');
-            $id_usuario_captura = null;
-           
-    
-            // VERIFICAR QUE CLAVE Y NOMBRE NO ESTEN VACÍOS
-            if (empty($tipo_bloqueo)) {
-                throw new Exception('Parámetro "Tipo bloqueo" vacío');
-            }
-
-            if (empty($fecha_inicio)) {
-                throw new Exception('Parámetro "Fecha de inicio" vacío');
-            }
-
-            if (empty($fecha_termino)) {
-                throw new Exception('Parámetro "Fecha de termino" vacío');
-            }
-
-            $id_locacion    = is_numeric($id_locacion) && $id_locacion > 0 ? $id_locacion : null;
-
-            //  SE VALIDA QUE LA FECHA NO SEA MENOR A LA VARIABLE DE CONFIURACION
-            $phql   = " SELECT 
-                            CASE 
-                                WHEN ((current_date - valor::INT) > :fecha_inicio::DATE) 
-                                THEN 0 
-                                ELSE 1 
-                            END AS flag_fecha_valida  ,
-                            (current_date - valor::INT) as fecha_valida,
-                            valor
-                        FROM ctvariables_sistema 
-                        WHERE clave = 'dias_movimientos_citas_vencidas';";
-
-            $result = $db->query($phql, [
-                'fecha_inicio' => $fecha_inicio  // Ya en formato yyyy-mm-dd
-            ]);
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-    
-            // Recorrer los resultados
-            while ($row = $result->fetch()) {
-                if ($row['flag_fecha_valida'] == 0){
-                    throw new Exception('La fecha no puede ser menor a: '.FuncionesGlobales::formatearFecha($row['fecha_valida'],'d-m-Y'));
-                }
-            }
-
-            //  SE BUSCA EL ID_PROFESIONAL DEL USUARIO
-            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
-            $result = $db->query($phql,array('clave' => $usuario_solicitud));
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-    
-            // Recorrer los resultados
-            while ($row = $result->fetch()) {
-                $id_usuario_captura = $row['id'];
-            }
-    
-            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
-            $phql = "SELECT * FROM tbfechas_bloqueo_agenda a
-                    WHERE fecha_inicio = :fecha_inicio AND fecha_termino = :fecha_termino ";
-
-            $values = array(
-                'fecha_inicio'  => $fecha_inicio,
-                'fecha_termino' => $fecha_termino
-            );
-
-            if ($tipo_bloqueo == 1){
-
-                $phql   .= " AND (id_locacion IS NULL OR id_locacion = :id_locacion) AND id_profesional IS NULL ";
-                $values['id_locacion']  = $id_locacion;
-
-                $result = $db->query($phql, $values);
-                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-        
-                while ($row = $result->fetch()) {
-                    throw new Exception('Registro ya existente en el catalogo');
-                }
-
-                // INSERTAR NUEVO USUARIO
-                $phql = "INSERT INTO tbfechas_bloqueo_agenda (
-                                        id_locacion, 
-                                        tipo_bloqueo,
-                                        fecha_inicio,
-                                        fecha_termino,
-                                        label_bloqueo,
-                                        id_usuario_captura
-                                    ) 
-                        VALUES (
-                                    :id_locacion, 
-                                    1,
-                                    :fecha_inicio,
-                                    :fecha_termino,
-                                    :label_bloqueo,
-                                    :id_usuario_captura
-                                )";
-        
-                $values = [
-                    'id_locacion'           => $id_locacion,
-                    'fecha_inicio'          => $fecha_inicio,
-                    'fecha_termino'         => $fecha_termino,
-                    'label_bloqueo'         => $label_bloqueo,
-                    'id_usuario_captura'    => $id_usuario_captura
-                ];
-        
-                $result = $db->execute($phql, $values);
-
-            }
-
-            if ($tipo_bloqueo == 2){
-
-            }
-    
-            // RESPUESTA JSON
-            $response = new Response();
-            $response->setJsonContent(array('MSG' => 'OK'));
-            $response->setStatusCode(200, 'OK');
-            return $response;
-            
-        } catch (\Exception $e) {
-            
-            $response = new Response();
-            $response->setJsonContent($e->getMessage());
-            $response->setStatusCode(400, 'not found');
-            return $response;
-        }
-    });
-
-    $app->post('/tbfechas_bloqueo_agenda/update', function () use ($app, $db, $request) {
+    $app->post('/tbfechas_bloqueo_agenda/save', function () use ($app, $db, $request) {
         $conexion = $db;
         try {
 
@@ -362,6 +228,7 @@ return function (Micro $app,$di) {
     
             // OBTENER DATOS JSON
             $id_registro        = $request->getPost('id') ?? null;
+            $accion             = $request->getPost('accion') ?? null;
             $id_locacion        = $request->getPost('id_locacion') ?? null;
             $tipo_bloqueo       = $request->getPost('tipo_bloqueo') ?? null;
             $fecha_inicio       = $request->getPost('fecha_inicio') ?? null;
@@ -371,8 +238,12 @@ return function (Micro $app,$di) {
             $id_profesional     = $request->getPost('id_profesional') ?? null;
             $usuario_solicitud  = $request->getPost('usuario_solicitud');
             $id_usuario_captura = null;
+
+            if (empty($accion)){
+                throw new Exception('Parámetro "Accion" vacío');
+            }
            
-            if (empty($id_registro) || !is_numeric($id_registro)){
+            if ($accion == 'update' && (empty($id_registro) || !is_numeric($id_registro))){
                 throw new Exception('Parámetro "Identificador" vacío');
             }
     
@@ -414,8 +285,10 @@ return function (Micro $app,$di) {
             }
 
             //  SE BORRA EL REGISTRO ANTERIOR
-            $phql   = "DELETE FROM tbfechas_bloqueo_agenda WHERE id = :id";
-            $result = $conexion->query($phql,array('id' => $id_registro));
+            if ($accion == 'update'){
+                $phql   = "DELETE FROM tbfechas_bloqueo_agenda WHERE id = :id";
+                $result = $conexion->query($phql,array('id' => $id_registro));
+            }
 
             $id_locacion    = is_numeric($id_locacion) && $id_locacion > 0 ? $id_locacion : null;
 
@@ -430,8 +303,11 @@ return function (Micro $app,$di) {
             }
     
             // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
-            $phql = "SELECT * FROM tbfechas_bloqueo_agenda a
-                    WHERE fecha_inicio = :fecha_inicio AND fecha_termino = :fecha_termino ";
+            $phql = "   SELECT * FROM tbfechas_bloqueo_agenda a
+                        WHERE ((fecha_inicio = :fecha_inicio AND fecha_termino = :fecha_termino) OR 
+                             (:fecha_inicio BETWEEN fecha_inicio AND fecha_termino) OR
+                             (:fecha_termino BETWEEN fecha_inicio AND fecha_termino))
+                        ";
 
             $values = array(
                 'fecha_inicio'  => $fecha_inicio,
@@ -440,7 +316,7 @@ return function (Micro $app,$di) {
 
             if ($tipo_bloqueo == 1){
 
-                $phql   .= " AND (id_locacion IS NULL OR id_locacion = :id_locacion) AND id_profesional IS NULL ";
+                $phql   .= " AND tipo_bloqueo = 1 AND ((id_locacion IS NOT NULL AND id_locacion = :id_locacion) OR (id_locacion IS NULL AND id_profesional IS NULL)) ";
                 $values['id_locacion']  = $id_locacion;
 
                 $result = $db->query($phql, $values);
@@ -481,7 +357,51 @@ return function (Micro $app,$di) {
             }
 
             if ($tipo_bloqueo == 2){
+                if (!is_numeric($id_profesional)){
+                    throw new Exception('Parametro "Profesional" vacio');
+                }
 
+                //  SE VERIFICA SI NO HAY UN REGISTRO YA CREADO
+                $phql   .= " AND tipo_bloqueo = 2 AND id_profesional = :id_profesional ";
+                $values['id_profesional']   = $id_profesional;
+
+                $result = $db->query($phql, $values);
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                while ($row = $result->fetch()) {
+                    throw new Exception('Registro ya existente en el catalogo para el profesional');
+                }
+
+                // INSERTAR NUEVO USUARIO
+                $phql = "INSERT INTO tbfechas_bloqueo_agenda (
+                                        tipo_bloqueo,
+                                        fecha_inicio,
+                                        fecha_termino,
+                                        id_motivo_bloqueo,
+                                        label_bloqueo,
+                                        id_profesional,
+                                        id_usuario_captura
+                                    ) 
+                        VALUES (
+                                    2,
+                                    :fecha_inicio,
+                                    :fecha_termino,
+                                    :id_motivo_bloqueo,
+                                    :label_bloqueo,
+                                    :id_profesional,
+                                    :id_usuario_captura
+                                )";
+        
+                $values = [
+                    'fecha_inicio'          => $fecha_inicio,
+                    'fecha_termino'         => $fecha_termino,
+                    'id_motivo_bloqueo'     => $id_motivo_bloqueo,
+                    'id_profesional'        => $id_profesional,
+                    'label_bloqueo'         => $label_bloqueo,
+                    'id_usuario_captura'    => $id_usuario_captura
+                ];
+        
+                $result = $conexion->execute($phql, $values);
             }
             
             $conexion->commit();
