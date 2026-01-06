@@ -49,6 +49,7 @@ return function (Micro $app,$di) {
             $id     = $request->getQuery('id');
             $fecha_inicio   = $request->getQuery('fecha_inicio') ?? null;
             $fecha_termino  = $request->getQuery('fecha_termino') ?? null;
+            $id_locacion    = $request->getQuery('id_locacion') ?? null;
             $id_motivo_bloqueo  = $request->getQuery('id_motivo_bloqueo') ?? null;
             $id_profesional     = $request->getQuery('id_profesional') ?? null;
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
@@ -66,17 +67,19 @@ return function (Micro $app,$di) {
 
             if (!empty($fecha_inicio) || !empty($fecha_termino)){
                 if (!empty($fecha_inicio) && !empty($fecha_termino)){
-                    $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
+                    $phql   .= " AND ((a.fecha_inicio BETWEEN :fecha_inicio AND :fecha_termino) 
+                                        OR  (a.fecha_termino BETWEEN :fecha_inicio AND :fecha_termino)
+                                    ) ";
                     $values['fecha_inicio']     = $fecha_inicio;
                     $values['fecha_termino']    = $fecha_termino;
                 } else {
                     if (!empty($fecha_inicio)){
-                        $phql   .= " AND a.fecha_cita >= :fecha_inicio ";
+                        $phql   .= " AND a.fecha_inicio >= :fecha_inicio ";
                         $values['fecha_inicio']     = $fecha_inicio;
                     }
 
                     if (!empty($fecha_termino)){
-                        $phql   .= " AND a.fecha_cita <= :fecha_termino ";
+                        $phql   .= " AND a.fecha_termino <= :fecha_termino ";
                         $values['fecha_termino']    = $fecha_termino;
                     }
                 }
@@ -92,12 +95,16 @@ return function (Micro $app,$di) {
                 $values['id_profesional']   = $id_profesional;
             }
 
-            $phql   .= " AND (a.id_locacion IS NULL OR EXISTS (
+            if (!empty($id_locacion)){
+                $phql   .= ' AND id_locacion IS NULL ';
+            } else {
+                $phql   .= " AND (a.id_locacion IS NULL OR EXISTS (
                             SELECT 1 FROM ctusuarios_locaciones t1 
                             LEFT JOIN ctusuarios t2 ON t1.id_usuario = t2.id
                             WHERE t2.clave = :usuario_solicitud AND a.id_locacion = t1.id_locacion 
                         ))";
-            $values['usuario_solicitud']    = $usuario_solicitud;
+                $values['usuario_solicitud']    = $usuario_solicitud;
+            }
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -129,6 +136,7 @@ return function (Micro $app,$di) {
             $id     = $request->getQuery('id');
             $fecha_inicio   = $request->getQuery('fecha_inicio') ?? null;
             $fecha_termino  = $request->getQuery('fecha_termino') ?? null;
+            $id_locacion    = $request->getQuery('id_locacion') ?? null;
             $id_motivo_bloqueo  = $request->getQuery('id_motivo_bloqueo') ?? null;
             $id_profesional     = $request->getQuery('id_profesional') ?? null;
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
@@ -152,17 +160,19 @@ return function (Micro $app,$di) {
 
             if (!empty($fecha_inicio) || !empty($fecha_termino)){
                 if (!empty($fecha_inicio) && !empty($fecha_termino)){
-                    $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
+                    $phql   .= " AND ((a.fecha_inicio BETWEEN :fecha_inicio AND :fecha_termino) 
+                                        OR  (a.fecha_termino BETWEEN :fecha_inicio AND :fecha_termino)
+                                    ) ";
                     $values['fecha_inicio']     = $fecha_inicio;
                     $values['fecha_termino']    = $fecha_termino;
                 } else {
                     if (!empty($fecha_inicio)){
-                        $phql   .= " AND a.fecha_cita >= :fecha_inicio ";
+                        $phql   .= " AND a.fecha_inicio >= :fecha_inicio ";
                         $values['fecha_inicio']     = $fecha_inicio;
                     }
 
                     if (!empty($fecha_termino)){
-                        $phql   .= " AND a.fecha_cita <= :fecha_termino ";
+                        $phql   .= " AND a.fecha_termino <= :fecha_termino ";
                         $values['fecha_termino']    = $fecha_termino;
                     }
                 }
@@ -178,12 +188,17 @@ return function (Micro $app,$di) {
                 $values['id_profesional']   = $id_profesional;
             }
 
-            $phql   .= " AND (a.id_locacion IS NULL OR EXISTS (
+            if (!empty($id_locacion)){
+                $phql   .= ' AND id_locacion IS NULL ';
+            } else {
+                $phql   .= " AND (a.id_locacion IS NULL OR EXISTS (
                             SELECT 1 FROM ctusuarios_locaciones t1 
                             LEFT JOIN ctusuarios t2 ON t1.id_usuario = t2.id
                             WHERE t2.clave = :usuario_solicitud AND a.id_locacion = t1.id_locacion 
                         ))";
-            $values['usuario_solicitud']    = $usuario_solicitud;
+                $values['usuario_solicitud']    = $usuario_solicitud;
+            }
+            
 
             $phql   .= ' ORDER BY a.fecha_inicio DESC ';
     
