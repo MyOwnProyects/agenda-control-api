@@ -11,48 +11,15 @@ return function (Micro $app,$di) {
     // Obtener el adaptador de base de datos desde el contenedor DI
     $db = $di->get('db');
 
-    $app->get('/ctmotivos_bloqueo_agenda/show', function () use ($app,$db,$request) {
-        try{
-        
-            // Definir el query SQL
-            $phql   = "SELECT  
-                            *
-                        FROM ctmotivos_bloqueo_agenda a
-                        WHERE 1 = 1 ORDER BY a.nombre ASC";
-    
-            // Ejecutar el query y obtener el resultado
-            $result = $db->query($phql);
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-    
-            // Recorrer los resultados
-            while ($row = $result->fetch()) {
-                $data[] = $row;
-            }
-    
-            // Devolver los datos en formato JSON
-            $response = new Response();
-            $response->setJsonContent($data);
-            $response->setStatusCode(200, 'OK');
-            return $response;
-        }catch (\Exception $e){
-            // Devolver los datos en formato JSON
-            $response = new Response();
-            $response->setJsonContent($e->getMessage());
-            $response->setStatusCode(400, 'not found');
-            return $response;
-        }
-        
-    });
-
     $app->get('/tbfechas_bloqueo_agenda/count', function () use ($app,$db,$request) {
         try{
             $id     = $request->getQuery('id');
             $fecha_inicio   = $request->getQuery('fecha_inicio') ?? null;
             $fecha_termino  = $request->getQuery('fecha_termino') ?? null;
             $id_locacion    = $request->getQuery('id_locacion') ?? null;
-            $id_motivo_bloqueo  = $request->getQuery('id_motivo_bloqueo') ?? null;
-            $id_profesional     = $request->getQuery('id_profesional') ?? null;
-            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            $id_motivo_cancelacion_cita = $request->getQuery('id_motivo_cancelacion_cita') ?? null;
+            $id_profesional             = $request->getQuery('id_profesional') ?? null;
+            $usuario_solicitud          = $request->getQuery('usuario_solicitud');
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -85,9 +52,9 @@ return function (Micro $app,$di) {
                 }
             }
 
-            if (!empty($id_motivo_bloqueo)){
-                $phql   .= " AND a.id_motivo_bloqueo = :id_motivo_bloqueo ";
-                $values['id_motivo_bloqueo']    = $id_motivo_bloqueo;
+            if (!empty($id_motivo_cancelacion_cita)){
+                $phql   .= " AND a.id_motivo_cancelacion_cita = :id_motivo_cancelacion_cita ";
+                $values['id_motivo_cancelacion_cita']   = $id_motivo_cancelacion_cita;
             }
 
             if (!empty($id_profesional)){
@@ -137,9 +104,9 @@ return function (Micro $app,$di) {
             $fecha_inicio   = $request->getQuery('fecha_inicio') ?? null;
             $fecha_termino  = $request->getQuery('fecha_termino') ?? null;
             $id_locacion    = $request->getQuery('id_locacion') ?? null;
-            $id_motivo_bloqueo  = $request->getQuery('id_motivo_bloqueo') ?? null;
-            $id_profesional     = $request->getQuery('id_profesional') ?? null;
-            $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            $id_motivo_cancelacion_cita = $request->getQuery('id_motivo_cancelacion_cita') ?? null;
+            $id_profesional             = $request->getQuery('id_profesional') ?? null;
+            $usuario_solicitud          = $request->getQuery('usuario_solicitud');
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -178,9 +145,9 @@ return function (Micro $app,$di) {
                 }
             }
 
-            if (!empty($id_motivo_bloqueo)){
-                $phql   .= " AND a.id_motivo_bloqueo = :id_motivo_bloqueo ";
-                $values['id_motivo_bloqueo']    = $id_motivo_bloqueo;
+            if (!empty($id_motivo_cancelacion_cita)){
+                $phql   .= " AND a.id_motivo_cancelacion_cita = :id_motivo_cancelacion_cita ";
+                $values['id_motivo_cancelacion_cita']   = $id_motivo_cancelacion_cita;
             }
 
             if (!empty($id_profesional)){
@@ -248,11 +215,11 @@ return function (Micro $app,$di) {
             $tipo_bloqueo       = $request->getPost('tipo_bloqueo') ?? null;
             $fecha_inicio       = $request->getPost('fecha_inicio') ?? null;
             $fecha_termino      = $request->getPost('fecha_termino') ?? null;
-            $id_motivo_bloqueo  = $request->getPost('id_motivo_bloqueo') ?? null;
-            $label_bloqueo      = $request->getPost('label_bloqueo') ?? null;
-            $id_profesional     = $request->getPost('id_profesional') ?? null;
-            $usuario_solicitud  = $request->getPost('usuario_solicitud');
-            $id_usuario_captura = null;
+            $id_motivo_cancelacion_cita = $request->getPost('id_motivo_cancelacion_cita') ?? null;
+            $label_bloqueo              = $request->getPost('label_bloqueo') ?? null;
+            $id_profesional             = $request->getPost('id_profesional') ?? null;
+            $usuario_solicitud          = $request->getPost('usuario_solicitud');
+            $id_usuario_captura         = null;
 
             if (empty($accion)){
                 throw new Exception('Parámetro "Accion" vacío');
@@ -392,7 +359,7 @@ return function (Micro $app,$di) {
                                         tipo_bloqueo,
                                         fecha_inicio,
                                         fecha_termino,
-                                        id_motivo_bloqueo,
+                                        id_motivo_cancelacion_cita,
                                         label_bloqueo,
                                         id_profesional,
                                         id_usuario_captura
@@ -401,7 +368,7 @@ return function (Micro $app,$di) {
                                     2,
                                     :fecha_inicio,
                                     :fecha_termino,
-                                    :id_motivo_bloqueo,
+                                    :id_motivo_cancelacion_cita,
                                     :label_bloqueo,
                                     :id_profesional,
                                     :id_usuario_captura
@@ -410,10 +377,10 @@ return function (Micro $app,$di) {
                 $values = [
                     'fecha_inicio'          => $fecha_inicio,
                     'fecha_termino'         => $fecha_termino,
-                    'id_motivo_bloqueo'     => $id_motivo_bloqueo,
-                    'id_profesional'        => $id_profesional,
-                    'label_bloqueo'         => $label_bloqueo,
-                    'id_usuario_captura'    => $id_usuario_captura
+                    'id_motivo_cancelacion_cita'    => $id_motivo_cancelacion_cita,
+                    'id_profesional'                => $id_profesional,
+                    'label_bloqueo'                 => $label_bloqueo,
+                    'id_usuario_captura'            => $id_usuario_captura
                 ];
         
                 $result = $conexion->execute($phql, $values);
