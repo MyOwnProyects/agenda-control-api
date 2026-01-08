@@ -385,6 +385,37 @@ return function (Micro $app,$di) {
         
                 $result = $conexion->execute($phql, $values);
             }
+
+            //  SE MANDAN EDITAR TODAS LAS CITAS ACTIVAS EN EL RANGO DE FECHAS
+            //  POR DEFECTO SE MARCARAN COMO ESTATUS 2: PENDIENTES POR REAGENDAR
+            $phql   = " UPDATE tbagenda_citas SET 
+                            activa = 2,
+                            id_motivo_cancelacion = :id_motivo_cancelacion,
+                            observaciones_cancelacion = :observaciones_cancelacion,
+                            id_usuario_cancelacion = :id_usuario_cancelacion,
+                            fecha_cancelacion = NOW() 
+                        WHERE (fecha_cita BETWEEN :fecha_inicio AND :fecha_termino)
+                        AND activa = 1
+                        ";
+            $values = array(
+                'id_motivo_cancelacion'     => $id_motivo_cancelacion,
+                'observaciones_cancelacion' => 'MOVIMIENTO ADMINISTRATIVO, MOTIVO:'.$label_bloqueo,
+                'id_usuario_cancelacion'    => $id_usuario_solicitud,
+                'fecha_inicio'              => $fecha_inicio,
+                'fecha_termino'             => $fecha_termino
+            );
+            
+            if (is_numeric($id_profesional)){
+                $phql   .= " AND id_profesional = :id_profesional ";
+                $values['id_profesional']   = $id_profesional;
+            }
+
+            if (is_numeric($id_locacion)){
+                $phql   .= ' AND id_locacion = :id_locacion ';
+                $values['id_locacion']  = $id_locacion;
+            }
+
+            $result = $conexion->execute($phql, $values);
             
             $conexion->commit();
     
