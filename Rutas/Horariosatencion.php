@@ -117,7 +117,69 @@ return function (Micro $app,$di) {
             $id             = $request->getQuery('id') ?? null;
             $id_locacion    = $request->getQuery('id_locacion');
             $id_profesional = $request->getQuery('id_profesional') ?? null;
-            $arr_return     = array();
+            $omitir_dias_inhabiles  = $request->getQuery('omitir_dias_inhabiles') ?? null;
+            $fecha_inicio           = $request->getQuery('fecha_inicio') ?? null;
+            $fecha_termino          = $request->getQuery('fecha_termino') ?? null;
+            $arr_return         = array();
+            $arr_dias_inhabiles = array();
+
+            //  SI VIENE LA BANDERA DE OMITIR DIAS SE DEBEN DE SEGUIR LOS SIGUIENTES PASOS
+            //  1. Del rango de semana se buscan si hay dias inhabiles
+            //  2. De dichos dias se obtienen los dias de la semana (Lnes,martes...)
+            //  3. Al hacer realizar la busqueda no se agregan al array final
+            //      la informacion de ese día
+
+            if ($omitir_dias_inhabiles){
+                $phql   = " SELECT * FROM tbfechas_bloqueo_agenda 
+                            WHERE(
+                                    (fecha_inicio BETWEEN :fecha_inicio AND :fecha_termino) OR 
+                                    (fecha_termino BETWEEN :fecha_inicio AND :fecha_termino) OR
+                                    (fecha_inicio <= :fecha_inicio AND fecha_termino >= :fecha_termino)
+                                )";
+                $values = array(
+                    'fecha_inicio'  => $fecha_inicio,
+                    'fecha_termino' => $fecha_termino
+                );
+                
+                if (is_numeric($id_profesional)){
+                    $phql   .= " AND id_locacion IS NULL AND id_profesional = :id_profesional ";
+                    $values['id_profesional']   = $id_profesional;
+                }
+
+                if (is_numeric($id_locacion) && empty($id_profesional)){
+                    $phql   .= " AND id_profesional IS NULL AND id_locacion = :id_locacion ";
+                    $values['id_locacion']  = $id_locacion;
+                }
+
+                $result = $db->query($phql,$values);
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result){
+                    while($data = $result->fetch()){
+                        // Convertir las fechas a objetos DateTime
+                        $fecha_inicio_peticion  = new DateTime($fecha_inicio);
+                        $fecha_termino_peticion = new DateTime($fecha_termino);
+                        $fecha_inicio_loop      = new DateTime($data['fecha_inicio']);
+                        $fecha_termino_loop     = new DateTime($data['fecha_termino']);
+                        
+                        // Iterar día por día
+                        while ($fecha_inicio_loop <= $fecha_termino_loop) {
+                            $fecha_actual = $fecha_inicio_loop->format('Y-m-d');
+                        
+                            if ($fecha_actual >= $fecha_inicio_peticion ||
+                                $fecha_actual <= $fecha_termino_peticion){
+                                if (!in_array($fecha_actual, $arr_dias_inhabiles)) {
+                                    $arr_dias_inhabiles[] = $fecha_inicio_loop->format('N');
+                                }
+                            }
+                            
+                            // Sumar un día
+                            $fecha_inicio_loop->modify('+1 day');
+                        }
+                    }
+                }
+
+            }
 
             $phql   = "SELECT 
                             a.id,
@@ -179,8 +241,15 @@ return function (Micro $app,$di) {
 
                 if ($result_dias){
                     while($data_dias = $result_dias->fetch()){
+                        if (in_array($data_dias['dia'], $arr_dias_inhabiles)) {
+                            continue;
+                        }
                         $tmp_array['dias'][]    = $data_dias;
                     }
+                }
+
+                if (count($tmp_array['dias']) == 0){
+                    continue;
                 }
 
                 $arr_return[]   = $tmp_array;
