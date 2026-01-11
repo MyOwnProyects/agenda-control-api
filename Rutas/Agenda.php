@@ -186,7 +186,7 @@ return function (Micro $app,$di) {
                             CASE 
                                 WHEN b.fecha_nacimiento IS NOT NULL THEN
                                     EXTRACT(YEAR FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text || '.' ||
-                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text, 1, '0')
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text, 2, '0')
                                 ELSE NULL
                             END AS edad_actual
                         FROM tbagenda_citas a 
@@ -690,6 +690,29 @@ return function (Micro $app,$di) {
 
             if ($id_usuario_solicitud == null){
                 throw new Exception('Usuario inexistente en el catalogo');
+            }
+
+            //  SE VERIFICA QUE NO EXISTA UN DIA INHABIL PARA LA LOCACION
+            //  O SI EL PROFESIONAL ESTA DISPONIBLE POR DIAS DE VACACIONES
+            $phql   = " SELECT * FROM tbfechas_bloqueo_agenda 
+                        WHERE (:fecha_cita BETWEEN fecha_inicio AND fecha_termino) AND
+                        (
+                            (id_locacion IS NOT NULL AND id_locacion = :id_locacion AND id_profesional IS NULL) OR
+                            (id_locacion IS NULL AND id_profesional = :id_profesional)
+                        ) ORDER BY tipo_bloqueo ASC LIMIT 1;
+                        ";
+            $result = $db->query($phql,array(
+                'fecha_cita'        => $fecha_cita,
+                'id_locacion'       => $id_locacion,
+                'id_profesional'    => $id_profesional,
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result){
+                while($data = $result->fetch()){
+                    $tipo_bloqueo   = $data['tipo_bloqueo'] == 1 ? 'la locaci&oacute;n' : 'el profesional';
+                    throw new Exception("Fecha no disponible para $tipo_bloqueo por el motivo de ".$data['label_bloqueo']);
+                }
             }
 
             //  SI TRAE ID_AGENDA_CITA, ESTA SE CANCELA POR EL MOTIVO INDICADO
