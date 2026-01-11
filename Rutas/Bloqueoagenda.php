@@ -219,6 +219,7 @@ return function (Micro $app,$di) {
             $label_bloqueo              = $request->getPost('label_bloqueo') ?? null;
             $id_profesional             = $request->getPost('id_profesional') ?? null;
             $usuario_solicitud          = $request->getPost('usuario_solicitud');
+            $tipo_movimiento            = $request->getPost('tipo_movimiento') ?? null;
             $id_usuario_captura         = null;
 
             if (empty($accion)){
@@ -387,9 +388,13 @@ return function (Micro $app,$di) {
             }
 
             //  SE MANDAN EDITAR TODAS LAS CITAS ACTIVAS EN EL RANGO DE FECHAS
-            //  POR DEFECTO SE MARCARAN COMO ESTATUS 2: PENDIENTES POR REAGENDAR
+            if (empty($tipo_movimiento) || $tipo_movimiento == 'pendiente'){
+                $tipo_movimiento    = 2;
+            } else {
+                $tipo_movimiento    = 0;
+            }
             $phql   = " UPDATE tbagenda_citas SET 
-                            activa = 2,
+                            activa = :tipo_movimiento,
                             id_motivo_cancelacion = :id_motivo_cancelacion,
                             observaciones_cancelacion = :observaciones_cancelacion,
                             id_usuario_cancelacion = :id_usuario_cancelacion,
@@ -398,9 +403,10 @@ return function (Micro $app,$di) {
                         AND activa = 1
                         ";
             $values = array(
-                'id_motivo_cancelacion'     => $id_motivo_cancelacion,
+                'tipo_movimiento'           => $tipo_movimiento,
+                'id_motivo_cancelacion'     => $id_motivo_cancelacion_cita,
                 'observaciones_cancelacion' => 'MOVIMIENTO ADMINISTRATIVO, MOTIVO:'.$label_bloqueo,
-                'id_usuario_cancelacion'    => $id_usuario_solicitud,
+                'id_usuario_cancelacion'    => $id_usuario_captura,
                 'fecha_inicio'              => $fecha_inicio,
                 'fecha_termino'             => $fecha_termino
             );
