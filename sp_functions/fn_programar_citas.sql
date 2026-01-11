@@ -124,6 +124,7 @@ BEGIN
             FOR fecha_actual IN
                 SELECT generate_series(p_fecha_inicio, p_fecha_inicio + (v_dias || ' days')::INTERVAL, '1 day')::DATE
             LOOP
+
                 -- Obtenemos el día de la semana en inglés
                 dia_semana := to_char(fecha_actual, 'Day');
 
@@ -140,6 +141,20 @@ BEGIN
                 
                 --  PARA SABER QUE LA FECHA GENERADA ES DEL DIA DE LA CITA
                 IF dia_semana_num <> i THEN 
+                    CONTINUE;
+                END IF;
+
+                --  SE BUSCA SI HAY UN REGISTRO DE FECHA INHABIL PARA LA LOCACION O 
+                --  PARA EL PROFESIONAL
+                IF EXISTS (
+                    SELECT 1 
+                    FROM tbfechas_bloqueo_agenda 
+                    WHERE fecha_actual::DATE BETWEEN fecha_inicio AND fecha_termino
+                    AND (
+                            (id_locacion = p_id_locacion AND id_profesional IS NULL) OR 
+                            (id_locacion IS NULL AND id_profesional = arr_info_cita.id_profesional)
+                        )
+                ) THEN
                     CONTINUE;
                 END IF;
 
