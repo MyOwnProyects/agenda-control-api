@@ -133,7 +133,7 @@ return function (Micro $app,$di) {
                             CASE 
                                 WHEN fecha_nacimiento IS NOT NULL THEN
                                     EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento))::text || '.' ||
-                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 1, '0')
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 2, '0')
                                 ELSE NULL
                             END AS edad_actual
 
@@ -460,7 +460,7 @@ return function (Micro $app,$di) {
                             CASE 
                                 WHEN fecha_nacimiento IS NOT NULL THEN
                                     EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento))::text || '.' ||
-                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 1, '0')
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 2, '0')
                                 ELSE NULL
                             END AS edad_actual
                         FROM ctpacientes a WHERE a.id = :id_paciente";
@@ -1262,7 +1262,7 @@ return function (Micro $app,$di) {
                             CASE 
                                 WHEN fecha_nacimiento IS NOT NULL THEN
                                     EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento))::text || '.' ||
-                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 1, '0')
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 2, '0')
                                 ELSE NULL
                             END AS edad_actual
                         FROM ctpacientes a 
@@ -1781,7 +1781,7 @@ return function (Micro $app,$di) {
                             CASE 
                                 WHEN fecha_nacimiento IS NOT NULL THEN
                                     EXTRACT(YEAR FROM AGE(CURRENT_DATE, fecha_nacimiento))::text || '.' ||
-                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 1, '0')
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, fecha_nacimiento))::text, 2, '0')
                                 ELSE NULL
                             END AS edad_actual
                         FROM ctpacientes a 
