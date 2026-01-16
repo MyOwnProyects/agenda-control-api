@@ -1275,4 +1275,34 @@ return function (Micro $app,$di) {
             return $response;
         }
     });
+
+    $app->get('/motivos_citas_fuera_horario/show', function () use ($app,$db,$request) {
+        try{
+
+            //  SE BUSCA SI EXISTE UN REGISTRO DE APERTURA DE AGENDA
+            $phql   = "SELECT * FROM ctmotivos_citas_fuera_horario ORDER BY nombre ASC";
+
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $arr_return = array();
+            if ($result){
+                while($data = $result->fetch()){
+                    $arr_return[]   = $data;
+                }
+            }
+
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
 };
