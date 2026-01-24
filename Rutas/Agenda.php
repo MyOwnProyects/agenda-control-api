@@ -637,12 +637,15 @@ return function (Micro $app,$di) {
             $hora_termino       = $request->getPost('hora_termino');
             $usuario_solicitud  = $request->getPost('usuario_solicitud');
             $id_agenda_cita_anterior    = $request->getPost('id_agenda_cita');
-            $accion                     = $request->getPost('accion');
-            $id_cita_programada         = null;
-            $pagada                     = 0;
-            $fecha_pago                 = null;
-            $id_usuario_pago            = null;
-            $forma_pago                 = null;
+            $id_cita_simultanea         = $request->getPost('id_cita_simultanea') ?? null;
+            $clave_motivo_cita_fuera_horario            = $request->getPost('clave_motivo_cita_fuera_horario') ?? null;
+            $observaciones_motivo_cita_fuera_horario    = $request->getPost('observaciones_motivo_cita_fuera_horario') ?? null;
+            $accion                                     = $request->getPost('accion');
+            $id_cita_programada                         = null;
+            $pagada                                     = 0;
+            $fecha_pago                                 = null;
+            $id_usuario_pago                            = null;
+            $forma_pago                                 = null;
             
 
             //  SE VERIFICAN LOS CAMPOS OBLIGATORIOS
@@ -694,24 +697,26 @@ return function (Micro $app,$di) {
 
             //  SE VERIFICA QUE NO EXISTA UN DIA INHABIL PARA LA LOCACION
             //  O SI EL PROFESIONAL ESTA DISPONIBLE POR DIAS DE VACACIONES
-            $phql   = " SELECT * FROM tbfechas_bloqueo_agenda 
-                        WHERE (:fecha_cita BETWEEN fecha_inicio AND fecha_termino) AND
-                        (
-                            (id_locacion IS NOT NULL AND id_locacion = :id_locacion AND id_profesional IS NULL) OR
-                            (id_locacion IS NULL AND id_profesional = :id_profesional)
-                        ) ORDER BY tipo_bloqueo ASC LIMIT 1;
-                        ";
-            $result = $db->query($phql,array(
-                'fecha_cita'        => $fecha_cita,
-                'id_locacion'       => $id_locacion,
-                'id_profesional'    => $id_profesional,
-            ));
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+            if ($clave_motivo_cita_fuera_horario == null || $clave_motivo_cita_fuera_horario == 'CS'){
+                $phql   = " SELECT * FROM tbfechas_bloqueo_agenda 
+                            WHERE (:fecha_cita BETWEEN fecha_inicio AND fecha_termino) AND
+                            (
+                                (id_locacion IS NOT NULL AND id_locacion = :id_locacion AND id_profesional IS NULL) OR
+                                (id_locacion IS NULL AND id_profesional = :id_profesional)
+                            ) ORDER BY tipo_bloqueo ASC LIMIT 1;
+                            ";
+                $result = $db->query($phql,array(
+                    'fecha_cita'        => $fecha_cita,
+                    'id_locacion'       => $id_locacion,
+                    'id_profesional'    => $id_profesional,
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
-            if ($result){
-                while($data = $result->fetch()){
-                    $tipo_bloqueo   = $data['tipo_bloqueo'] == 1 ? 'la locaci&oacute;n' : 'el profesional';
-                    throw new Exception("Fecha no disponible para $tipo_bloqueo por el motivo de ".$data['label_bloqueo']);
+                if ($result){
+                    while($data = $result->fetch()){
+                        $tipo_bloqueo   = $data['tipo_bloqueo'] == 1 ? 'la locaci&oacute;n' : 'el profesional';
+                        throw new Exception("Fecha no disponible para $tipo_bloqueo por el motivo de ".$data['label_bloqueo']);
+                    }
                 }
             }
 
@@ -910,28 +915,30 @@ return function (Micro $app,$di) {
                 throw new Execption('No existe registro de apertura de agenda para la locaci&oacute;n');
             }
 
-            try{
-                //  SE VERIFICA QUE EL DOCENTE O EL PACIENTE NO TENGAN UNA CITA
-                //  QUE SE EMPALME CON LA HORA SOLICITADA
-                $phql   = "SELECT * FROM fn_validar_citas_diarias(:id_profesional , :id_paciente, :fecha_cita, :hora_inicio, :hora_termino)";
-                $result = $db->query($phql, array(
-                    'id_profesional'    => $id_profesional,
-                    'id_paciente'       => $id_paciente,
-                    'fecha_cita'        => $fecha_cita,
-                    'hora_inicio'       => $hora_inicio,
-                    'hora_termino'      => $hora_termino,
-                ));
-                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+            if ($clave_motivo_cita_fuera_horario == ''){
+                try{
+                    //  SE VERIFICA QUE EL DOCENTE O EL PACIENTE NO TENGAN UNA CITA
+                    //  QUE SE EMPALME CON LA HORA SOLICITADA
+                    $phql   = "SELECT * FROM fn_validar_citas_diarias(:id_profesional , :id_paciente, :fecha_cita, :hora_inicio, :hora_termino)";
+                    $result = $db->query($phql, array(
+                        'id_profesional'    => $id_profesional,
+                        'id_paciente'       => $id_paciente,
+                        'fecha_cita'        => $fecha_cita,
+                        'hora_inicio'       => $hora_inicio,
+                        'hora_termino'      => $hora_termino,
+                    ));
+                    $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
-                $flag_validar   = false;
-                if ($result){
-                    while($data = $result->fetch()){
-                        $flag_create    = true;
+                    $flag_validar   = false;
+                    if ($result){
+                        while($data = $result->fetch()){
+                            $flag_create    = true;
+                        }
                     }
-                }
 
-            } catch(\Exception $err){
-                throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
+                } catch(\Exception $err){
+                    throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
+                }
             }
 
             //  SE BUSCAN LOS COSTOS DE LOS SERVICIOS
@@ -964,7 +971,11 @@ return function (Micro $app,$di) {
                                         pagada,
                                         fecha_pago,
                                         id_usuario_pago,
-                                        forma_pago) 
+                                        forma_pago,
+                                        id_cita_simultanea,
+                                        id_motivo_cita_fuera_horario,
+                                        observaciones_motivo_cita_fuera_horario
+                                        ) 
                         VALUES( :id_locacion,
                                 :id_paciente,
                                 :fecha_cita,
@@ -979,7 +990,10 @@ return function (Micro $app,$di) {
                                 :pagada,
                                 :fecha_pago,
                                 :id_usuario_pago,
-                                :forma_pago
+                                :forma_pago,
+                                id_cita_simultanea,
+                                :id_motivo_cita_fuera_horario,
+                                :observaciones_motivo_cita_fuera_horario
                                 ) RETURNING *;";
 
             $values = array(
@@ -997,6 +1011,9 @@ return function (Micro $app,$di) {
                 'fecha_pago'            => $fecha_pago,
                 'id_usuario_pago'       => $id_usuario_pago,
                 'forma_pago'            => $forma_pago,
+                'id_cita_simultanea'    => $id_cita_simultanea,
+                'id_motivo_cita_fuera_horario'              => $id_motivo_cita_fuera_horario,
+                'observaciones_motivo_cita_fuera_horario'   => $observaciones_motivo_cita_fuera_horario
             );
 
             $result = $conexion->query($phql, $values);
