@@ -188,7 +188,11 @@ return function (Micro $app,$di) {
                                     EXTRACT(YEAR FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text || '.' ||
                                     LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text, 2, '0')
                                 ELSE NULL
-                            END AS edad_actual
+                            END AS edad_actual,
+                            a.id_cita_simultanea,
+                            a.id_motivo_cita_fuera_horario,
+                            i.nombre as nombre_motivo_cita_fuera_horario,
+                            a.observaciones_motivo_cita_fuera_horario
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
@@ -197,6 +201,7 @@ return function (Micro $app,$di) {
                         LEFT JOIN ctusuarios f ON a.id_usuario_cancelacion = f.id
                         LEFT JOIN ctusuarios g ON a.id_usuario_agenda = g.id
                         LEFT JOIN ctvariables_sistema h ON h.clave = 'dias_movimientos_citas_vencidas'
+                        LEFT JOIN ctmotivos_citas_fuera_horario i ON a.id_motivo_cita_fuera_horario = i.id
                         WHERE 1 = 1 ";
             $values = array();
     
@@ -638,6 +643,7 @@ return function (Micro $app,$di) {
             $usuario_solicitud  = $request->getPost('usuario_solicitud');
             $id_agenda_cita_anterior    = $request->getPost('id_agenda_cita');
             $id_cita_simultanea         = $request->getPost('id_cita_simultanea') ?? null;
+            $id_motivo_cita_fuera_horario               = $request->getPost('id_motivo_cita_fuera_horario') ?? null;
             $clave_motivo_cita_fuera_horario            = $request->getPost('clave_motivo_cita_fuera_horario') ?? null;
             $observaciones_motivo_cita_fuera_horario    = $request->getPost('observaciones_motivo_cita_fuera_horario') ?? null;
             $accion                                     = $request->getPost('accion');
@@ -991,7 +997,7 @@ return function (Micro $app,$di) {
                                 :fecha_pago,
                                 :id_usuario_pago,
                                 :forma_pago,
-                                id_cita_simultanea,
+                                :id_cita_simultanea,
                                 :id_motivo_cita_fuera_horario,
                                 :observaciones_motivo_cita_fuera_horario
                                 ) RETURNING *;";
