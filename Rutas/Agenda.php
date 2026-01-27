@@ -652,6 +652,70 @@ return function (Micro $app,$di) {
             $fecha_pago                                 = null;
             $id_usuario_pago                            = null;
             $forma_pago                                 = null;
+
+            if (is_numeric($id_cita_simultanea) && $clave_motivo_cita_fuera_horario == 'CS'){
+                //  SE SACA LA INFORMACION DE LA CITA SIMULTANEA
+                $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id";
+
+                $result = $db->query($phql, array(
+                    'id'    => $id_cita_simultanea
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                while ($row = $result->fetch()) {
+                    //  VALIDA QUE LA CITA SIMULTANEA ESTE ACTIVA
+                    if ($row['activa'] != 1){
+                        throw new Exception('Cita origen no disponible para registro de cita simultanea');
+                    }
+
+                    $phql   = " SELECT a.valor::INT as max_citas_simultaneas, t1.citas_simultaneas  FROM ctvariables_sistema a 
+                                LEFT JOIN (
+                                    SELECT COUNT(*) AS citas_simultaneas FROM tbagenda_citas a 
+                                    WHERE id_cita_simultanea = :id_cita_simultanea AND a.activa = 1
+                                ) t1 ON 1 = 1
+                                WHERE a.clave = 'max_citas_simultaneas';";
+
+                    $result_count   = $db->query($phql, array(
+                        'id_cita_simultanea'    => $id_cita_simultanea
+                    ));
+                    $result_count->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_count){
+                        while($data_count = $result_count->fetch()){
+                            if ($data_count['max_citas_simultaneas'] < ($data_count['citas_simultaneas'] + 1)){
+                                throw new Exception('Maximo de citas simultaneas alcanzado, Limite: '.$data_count['max_citas_simultaneas']);
+                            }
+                        }
+                    }
+
+                    //  SE OBTIENEN TODOS LOS DATOS DE LA CITA ORIGEN
+                    $id_locacion    = $row['id_locacion'];
+                    $id_profesional = $row['id_profesional'];
+                    $dia            = $row['dia'];
+                    $hora_inicio    = $row['hora_inicio'];
+                    $hora_termino   = $row['hora_termino'];
+                    $fecha_cita     = $row['fecha_cita'];
+
+                    //  SE BUSCAN LOS SERVICIOS
+                    $phql   = "SELECT * FROM tbagenda_citas_servicios WHERE id_agenda_cita = :id_cita_simultanea";
+
+                    $result_servicio    = $db->query($phql, array(
+                        'id_cita_simultanea'    => $id_cita_simultanea
+                    ));
+                    $result_servicio->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_servicio){
+                        while($data_servicio = $result_servicio->fetch()){
+                            $servicios[]    = array(
+                                'id_servicio'   => $data_servicio['id_servicio'],
+                                'duracion'      => $data_servicio['duracion']
+                            );
+                        }
+                    }
+                    
+                }
+                
+            }
             
 
             //  SE VERIFICAN LOS CAMPOS OBLIGATORIOS
@@ -671,7 +735,10 @@ return function (Micro $app,$di) {
                 throw new Exception('Fecha de cita vacia o no valida');
             }
 
-            $fecha_cita = DateTime::createFromFormat('d/m/Y', $fecha_cita)->format('Y-m-d');
+            //  SI ES CITA SIMULTANEA Y LLEGO A ESTE PUNTO NO SE OCUPA FORAMTEAR LA FECHA
+            if (!is_numeric($id_cita_simultanea)){
+                $fecha_cita = DateTime::createFromFormat('d/m/Y', $fecha_cita)->format('Y-m-d');
+            }
 
             if (empty($hora_inicio)){
                 throw new Exception('Fecha de cita vacia o no valida');
@@ -1038,14 +1105,14 @@ return function (Micro $app,$di) {
 
             $calcula_total  = 0;
             foreach($servicios as $servicio){
-                $calcula_total  = $calcula_total + $servicio['costo'];
+                $calcula_total  = $calcula_total + $arr_servicios[$servicio['id_servicio']]['costo'];
                 //  SE OBTIENEN LOS COSTOS REGISTRADOS POR SERVICIO
                 $phql   = "INSERT INTO tbagenda_citas_servicios (id_agenda_cita,id_servicio,duracion,costo)
                             VALUES (:id_agenda_cita,:id_servicio,:duracion,:costo)";
                 $result = $conexion->execute($phql, array(
                     'id_agenda_cita'    => $id_agenda_cita,
                     'id_servicio'       => $servicio['id_servicio'],
-                    'duracion'          => $servicio['duracion'] * 60,
+                    'duracion'          => is_numeric($id_cita_simultanea) ? $servicio['duracion'] : $servicio['duracion'] * 60,
                     'costo'             => $arr_servicios[$servicio['id_servicio']]['costo'],
                 ));
             }
