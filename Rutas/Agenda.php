@@ -793,6 +793,27 @@ return function (Micro $app,$di) {
                 }
             }
 
+            //  AUNQUE SEA UNA CITA FUERA DE HORARIO SE DEBE DE VERIFICAR QUE NO SE EMPALME
+            //  CON ALGUNA OTRA CITA DEL PACIENTE
+            if (is_numeric($id_motivo_cita_fuera_horario) && is_numeric($id_paciente)){
+                //  SE BUSCA SI EXISTE UNA CITA ACTIVA EN LA FECHA Y HORA DE LA CITA ORIGEN
+                //  PARA EL PACIENTE, ESTO PARA EVITAR DOS CITAS A LA MISMA HORA PARA EL PACIENTE
+                try{
+                    //  SE VERIFICA QUE EL DOCENTE O EL PACIENTE NO TENGAN UNA CITA
+                    //  QUE SE EMPALME CON LA HORA SOLICITADA
+                    $phql   = "SELECT * FROM fn_validar_citas_diarias(null , :id_paciente, :fecha_cita, :hora_inicio, :hora_termino)";
+                    $result = $db->query($phql, array(
+                        'id_paciente'       => $id_paciente,
+                        'fecha_cita'        => $fecha_cita,
+                        'hora_inicio'       => $hora_inicio,
+                        'hora_termino'      => $hora_termino,
+                    ));
+
+                } catch(\Exception $err){
+                    throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
+                }
+            }
+
             //  SI TRAE ID_AGENDA_CITA, ESTA SE CANCELA POR EL MOTIVO INDICADO
             if (!empty($id_agenda_cita_anterior)){
                 $phql   = "SELECT * FROM tbagenda_citas 
