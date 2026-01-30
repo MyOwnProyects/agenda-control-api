@@ -192,7 +192,8 @@ return function (Micro $app,$di) {
                             a.id_cita_simultanea,
                             a.id_motivo_cita_fuera_horario,
                             i.nombre as nombre_motivo_cita_fuera_horario,
-                            a.observaciones_motivo_cita_fuera_horario
+                            a.observaciones_motivo_cita_fuera_horario,
+                            COALESCE(j.num_citas_simultaneas,0) as num_citas_simultaneas
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
@@ -202,6 +203,13 @@ return function (Micro $app,$di) {
                         LEFT JOIN ctusuarios g ON a.id_usuario_agenda = g.id
                         LEFT JOIN ctvariables_sistema h ON h.clave = 'dias_movimientos_citas_vencidas'
                         LEFT JOIN ctmotivos_citas_fuera_horario i ON a.id_motivo_cita_fuera_horario = i.id
+                        LEFT JOIN LATERAL ( 
+                            SELECT t1.id_cita_simultanea,COUNT(*) AS num_citas_simultaneas  
+                            FROM  tbagenda_citas t1
+                            WHERE t1.id_cita_simultanea IS NOT NULL AND a.id = t1.id_cita_simultanea
+                            AND t1.activa = 1
+                            GROUP BY t1.id_cita_simultanea
+                        ) j ON j.id_cita_simultanea = a.id
                         WHERE 1 = 1 ";
             $values = array();
     
