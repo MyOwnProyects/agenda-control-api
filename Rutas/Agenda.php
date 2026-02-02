@@ -708,7 +708,7 @@ return function (Micro $app,$di) {
                     $phql   = "SELECT * FROM tbagenda_citas_servicios WHERE id_agenda_cita = :id_cita_simultanea";
 
                     $result_servicio    = $db->query($phql, array(
-                        'id_cita_simultanea'    => $id_cita_simultanea
+                        'id_cita_simultanea'    => $id_agenda_cita_anterior != null ? $id_agenda_cita_anterior : $id_cita_simultanea
                     ));
                     $result_servicio->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
@@ -851,6 +851,10 @@ return function (Micro $app,$di) {
 
                         if ($data['activa'] == 2){
                             $clave_cancelacion  = 'CPREA';
+                        }
+
+                        if (is_numeric($id_cita_simultanea)){
+                            $clave_cancelacion  = 'CS';
                         }
 
                         //  SE OBTIENE EL ID DEL MOTIVO CON CLAVE CAS
