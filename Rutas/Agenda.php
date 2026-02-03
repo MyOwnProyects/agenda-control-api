@@ -471,6 +471,7 @@ return function (Micro $app,$di) {
             $usuario_solicitud          = $request->getPost('usuario_solicitud');
             $tipo_movimiento            = $request->getPost('tipo_movimiento');
             $arr_id_agenda_cita         = $request->getPost('arr_id_agenda_cita') ?? array();
+            $tipo_accion_cita_simultanea    = $request->getPost('tipo_accion_cita_simultanea') ?? null;
 
             if (!empty($id_agenda_cita)){
                 $arr_id_agenda_cita = array($id_agenda_cita);
@@ -510,9 +511,11 @@ return function (Micro $app,$di) {
                 $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
                 $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
+                $arr_cita_verificar = array();
                 $flag_activa    = false;
                 if ($result){
                     while($data = $result->fetch()){
+                        $arr_cita_verificar = $data;
                         $flag_activa    = true;
 
                         if ($data['vencida'] == 1){
@@ -538,6 +541,7 @@ return function (Micro $app,$di) {
                                 observaciones_cancelacion = :observaciones_cancelacion,
                                 id_usuario_cancelacion = :id_usuario_cancelacion,
                                 fecha_cancelacion = NOW() ";
+
                 $values = array(
                     'id'                        => $id_agenda_cita,
                     'id_motivo_cancelacion'     => $id_motivo_cancelacion,
@@ -552,9 +556,99 @@ return function (Micro $app,$di) {
 
                 $phql   .= " WHERE id = :id ";
                 $result = $conexion->execute($phql, $values);
+
+                //  SE VERIFICAN LAS CITAS SIMULTANEAS AÑADIDAS A LA CITA BASE
+                $phql   = " SELECT COUNT(*) as citas_simultaneas FROM tbagenda_citas 
+                            WHERE id_cita_simultanea = :id_cita_simultanea AND activa = 1";
+                $result = $conexion->query($phql, array(
+                    'id_cita_simultanea'    => $id_agenda_cita
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result){
+                    while($data = $result->fetch()){
+                        if ($data['citas_simultaneas'] > 0 && empty($tipo_accion_cita_simultanea)){
+                            throw new Exception('La cita del día '.$data['fecha_cita'].' del paciente '.$data['nombre_completo'].' Cuenta con citas simultaneas y no se ha especificado la acción a tomar para estos casos');
+                        }
+
+                        if ($data['citas_simultaneas'] > 0 && $tipo_accion_cita_simultanea == 'todas'){
+                            //  SE REALIZA EL MISMO MOVIMIENTO A TODAS LAS CITAS SIMULTANEAS
+                            //  Y ESTAS CITAS PASAN A SER CITAS INDIVIDUALES
+                            $phql   = " UPDATE tbagenda_citas SET 
+                                            activa = :activa,
+                                            id_motivo_cancelacion = :id_motivo_cancelacion,
+                                            observaciones_cancelacion = :observaciones_cancelacion,
+                                            id_usuario_cancelacion = :id_usuario_cancelacion,
+                                            fecha_cancelacion = NOW(),
+                                            id_cita_simultanea = NULL,
+                                            id_motivo_cita_fuera_horario = null,
+                                            observaciones_motivo_cita_fuera_horario = null ";
+
+                            $values = array(
+                                'id'                        => $id_agenda_cita,
+                                'id_motivo_cancelacion'     => $id_motivo_cancelacion,
+                                'observaciones_cancelacion' => $observaciones_cancelacion.' Cita simultanea: '.$id_agenda_cita.' con el paciente: '.$arr_cita_verificar['nombre_completo'],
+                                'id_usuario_cancelacion'    => $id_usuario_solicitud,
+                                'activa'                    => $activa
+                            );
+
+                            if ($tipo_movimiento == 'pendiente'){
+                                $phql   .= ' , asistencia = 0 ';
+                            }
+
+                            $phql   .= " WHERE id_cita_simultanea = :id AND activa = 1";
+                            $result_update = $conexion->execute($phql, $values);
+                        }
+
+                        $aqui = 1;
+                        
+
+                        if ($data['citas_simultaneas'] > 0 && $tipo_accion_cita_simultanea == 'solo_base'){
+                            //  1. LA PRIMERA CITA SIMULTANEA PASA A SER LA CITA BASE
+                            //  2. LAS DEMAS CITAS SIMULTANEAS DE LA ANTERIOR CITA BASE O DE ESTE CONJUNTO PASAN A SER
+                            //      DE A NUEVA CITA BASE
+                            $phql   = " SELECT id FROM tbagenda_citas 
+                                        WHERE id_cita_simultanea = :id_cita_simultanea AND activa = 1 ORDER BY fecha_captura ASC LIMIT 1";
+
+                            $nuevo_id_cita_base = null;
+                            $result_id  = $conexion->query($phql, array(
+                                'id_cita_simultanea'    => $id_agenda_cita
+                            ));
+                            $result_id->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                            if ($result_id){
+                                while($data_id = $result_id->fetch()){
+                                    $nuevo_id_cita_base = $data_id['id'];
+                                }
+                            }
+
+                            //  SE VUELVE CITA BASE
+                            $phql   = " UPDATE tbagenda_citas SET 
+                                            id_cita_simultanea = null, 
+                                            id_motivo_cita_fuera_horario = null,
+                                            observaciones_motivo_cita_fuera_horario = null
+                                        WHERE id = :nuevo_id_cita_base";
+
+                            $result_nueva_base  = $conexion->execute($phql, array(
+                                'nuevo_id_cita_base'    => $nuevo_id_cita_base
+                            ));
+
+                            //  LAS DEMAS CITAS SIMULTANEAS PASAN A SER DE ESTA CITA
+                            $phql   = " UPDATE tbagenda_citas SET 
+                                            id_cita_simultanea = :nuevo_id_cita_base
+                                        WHERE id_cita_simultanea = :id_agenda_cita AND activa = 1";
+
+                            $result_nueva_base  = $conexion->execute($phql, array(
+                                'nuevo_id_cita_base'    => $nuevo_id_cita_base,
+                                'id_agenda_cita'        => $id_agenda_cita
+                            ));
+                        }
+                    }
+                }
             }
             
             $conexion->commit();
+            //$conexion->rollback();
 
             // RESPUESTA JSON
             $response = new Response();
@@ -1157,7 +1251,29 @@ return function (Micro $app,$di) {
                 'id_agenda_cita'    => $id_agenda_cita
             ));
 
-            //  CAMBIO PARA DEV 
+            //  SE BUSCAN TODAS LAS CITAS SIMULTANEAS QUE TENGAN EL ID DE LA CITA ORIGINAL
+            //  Y A ESTAS SE LES DEBE DE CAMBIAR EL DIA,HORARIO Y PROFESIONAL PARA QUE QUEDE
+            //  IGUAL A LA CITA BASE, Y EDITAR EL ID A LA NUEVA CITA
+            $phql   = " UPDATE tbagenda_citas SET 
+                            fecha_cita = :fecha_cita,
+                            dia = :dia,
+                            hora_inicio = :hora_inicio,
+                            hora_termino = :hora_termino,
+                            id_profesional = :id_profesional,
+                            id_cita_simultanea = :nuevo_id_cita_simultanea
+                        WHERE id_cita_simultanea = :id_agenda_cita_anterior 
+                        AND activa = 1";
+
+            $conexion->execute($phql,array(
+                'fecha_cita'        => $fecha_cita,
+                'dia'               => $dia,
+                'hora_inicio'       => $hora_inicio,
+                'hora_termino'      => $hora_termino,
+                'id_profesional'    => $id_profesional,
+                'nuevo_id_cita_simultanea'  => $id_agenda_cita,
+                'id_agenda_cita_anterior'   => $id_agenda_cita_anterior
+            ));
+
 
             $conexion->commit();
 
