@@ -755,6 +755,27 @@ return function (Micro $app,$di) {
             $id_usuario_pago                            = null;
             $forma_pago                                 = null;
 
+            //  SE VALIDA QUE UNA CITA ORDINARIA QUE YA TIENE CITAS SIMUTLANEAS NO PUEDE
+            //  PASAR A SER UNA CITA SIMULTANEA
+            if (is_numeric($id_agenda_cita_anterior) && is_numeric($id_cita_simultanea)){
+                $phql   = " SELECT COUNT(*) as citas_simultaneas FROM tbagenda_citas 
+                            WHERE id_cita_simultanea = :id_agenda_cita_anterior AND activa = 1";
+                
+                $result = $db->query($phql, array(
+                    'id_agenda_cita_anterior'   => $id_agenda_cita_anterior
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result){
+                    while($data = $result->fetch()){
+                        if ($data['citas_simultaneas'] > 0){
+                            throw new Exception('La cita no puede marcarse como cita simultanea ya que cuenta con '.$data['citas_simultaneas'].' citas adjutan a esta.');
+                        }
+                    }
+                }
+
+            }
+
             if (is_numeric($id_cita_simultanea) && $clave_motivo_cita_fuera_horario == 'CS'){
                 //  SE SACA LA INFORMACION DE LA CITA SIMULTANEA
                 $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id";
