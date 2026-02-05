@@ -25,6 +25,7 @@ return function (Micro $app,$di) {
             $citas_pagadas   = $request->getQuery('citas_pagadas') ?? null;
             $citas_adeudo           = $request->getQuery('citas_adeudo') ?? null;
             $citas_pagadas_rango    = $request->getQuery('citas_pagadas_rango') ?? null;
+            $citas_fuera_horario    = $request->getQuery('citas_fuera_horario') ?? null;
         
             // Definir el query SQL
             $phql   = "SELECT 
@@ -85,9 +86,18 @@ return function (Micro $app,$di) {
             }
 
             if (!empty($citas_pagadas_rango)){
-                $phql   .= "AND a.pagada = 1 AND a.fecha_pago BETWEEN :fecha_inicio AND :fecha_termino ";
+                $phql   .= "AND a.pagada = 1 AND (a.fecha_pago BETWEEN :fecha_inicio AND :fecha_termino) ";
                 $values['fecha_inicio']     = $fecha_inicio;
                 $values['fecha_termino']    = $fecha_termino;
+            }
+
+            if (is_numeric($citas_fuera_horario)){
+                if ($citas_fuera_horario == -1 ){
+                    $phql   .= " AND a.id_motivo_cita_fuera_horario IS NOT NULL ";
+                } else {
+                    $phql   .= " AND a.id_motivo_cita_fuera_horario = :id_motivo_cita_fuera_horario ";
+                    $values['id_motivo_cita_fuera_horario'] = $id_motivo_cita_fuera_horario;
+                }
             }
 
             // Ejecutar el query y obtener el resultado
@@ -134,6 +144,7 @@ return function (Micro $app,$di) {
             $citas_adeudo       = $request->getQuery('citas_adeudo') ?? null;
             $citas_pagadas_rango    = $request->getQuery('citas_pagadas_rango') ?? null;
             $from_digital_record    = $request->getQuery('from_digital_record') ?? null;
+            $citas_fuera_horario    = $request->getQuery('citas_fuera_horario') ?? null;
 
             $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
             $arr_estatus_asistencia = [
@@ -289,6 +300,15 @@ return function (Micro $app,$di) {
                 $phql   .= "AND a.pagada = 1 AND a.fecha_pago BETWEEN :fecha_inicio AND :fecha_termino ";
                 $values['fecha_inicio']     = $fecha_inicio;
                 $values['fecha_termino']    = $fecha_termino;
+            }
+
+            if (is_numeric($citas_fuera_horario)){
+                if ($citas_fuera_horario == -1 ){
+                    $phql   .= " AND a.id_motivo_cita_fuera_horario IS NOT NULL ";
+                } else {
+                    $phql   .= " AND a.id_motivo_cita_fuera_horario = :id_motivo_cita_fuera_horario ";
+                    $values['id_motivo_cita_fuera_horario'] = $id_motivo_cita_fuera_horario;
+                }
             }
 
             if (empty($from_digital_record)){
@@ -551,7 +571,10 @@ return function (Micro $app,$di) {
                 );
 
                 if ($tipo_movimiento == 'pendiente'){
-                    $phql   .= ' , asistencia = 0 ';
+                    $phql   .= ' , asistencia = 0, 
+                                    id_cita_simultanea = NULL,
+                                    id_motivo_cita_fuera_horario = null,
+                                    observaciones_motivo_cita_fuera_horario = null ';
                 }
 
                 $phql   .= " WHERE id = :id ";
@@ -568,7 +591,7 @@ return function (Micro $app,$di) {
                 if ($result){
                     while($data = $result->fetch()){
                         if ($data['citas_simultaneas'] > 0 && empty($tipo_accion_cita_simultanea)){
-                            throw new Exception('La cita del día '.$data['fecha_cita'].' del paciente '.$data['nombre_completo'].' Cuenta con citas simultaneas y no se ha especificado la acción a tomar para estos casos');
+                            throw new Exception('La cita del día '.$arr_cita_verificar['fecha_cita'].' del paciente '.$arr_cita_verificar['nombre_completo'].' Cuenta con citas simultaneas y no se ha especificado la acción a tomar para estos casos');
                         }
 
                         if ($data['citas_simultaneas'] > 0 && $tipo_accion_cita_simultanea == 'todas'){
@@ -599,9 +622,6 @@ return function (Micro $app,$di) {
                             $phql   .= " WHERE id_cita_simultanea = :id AND activa = 1";
                             $result_update = $conexion->execute($phql, $values);
                         }
-
-                        $aqui = 1;
-                        
 
                         if ($data['citas_simultaneas'] > 0 && $tipo_accion_cita_simultanea == 'solo_base'){
                             //  1. LA PRIMERA CITA SIMULTANEA PASA A SER LA CITA BASE
