@@ -96,7 +96,7 @@ return function (Micro $app,$di) {
                     $phql   .= " AND a.id_motivo_cita_fuera_horario IS NOT NULL ";
                 } else {
                     $phql   .= " AND a.id_motivo_cita_fuera_horario = :id_motivo_cita_fuera_horario ";
-                    $values['id_motivo_cita_fuera_horario'] = $id_motivo_cita_fuera_horario;
+                    $values['id_motivo_cita_fuera_horario'] = $citas_fuera_horario;
                 }
             }
 
@@ -145,6 +145,7 @@ return function (Micro $app,$di) {
             $citas_pagadas_rango    = $request->getQuery('citas_pagadas_rango') ?? null;
             $from_digital_record    = $request->getQuery('from_digital_record') ?? null;
             $citas_fuera_horario    = $request->getQuery('citas_fuera_horario') ?? null;
+            $cita_simultanea        = $request->getQuery('cita_simultanea') ?? null;
 
             $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
             $arr_estatus_asistencia = [
@@ -307,8 +308,13 @@ return function (Micro $app,$di) {
                     $phql   .= " AND a.id_motivo_cita_fuera_horario IS NOT NULL ";
                 } else {
                     $phql   .= " AND a.id_motivo_cita_fuera_horario = :id_motivo_cita_fuera_horario ";
-                    $values['id_motivo_cita_fuera_horario'] = $id_motivo_cita_fuera_horario;
+                    $values['id_motivo_cita_fuera_horario'] = $citas_fuera_horario;
                 }
+            }
+
+            if (is_numeric($cita_simultanea)){
+                $phql   .= ' AND a.id_cita_simultanea = :cita_simultanea ';
+                $values['cita_simultanea']  = $cita_simultanea;
             }
 
             if (empty($from_digital_record)){
@@ -333,7 +339,8 @@ return function (Micro $app,$di) {
                 $row['fecha_completa']  = $dias_semana[$row['day'] - 1].' '.FuncionesGlobales::formatearFecha($row['fecha_cita']) . ' de '. $row['start']. ' a '.$row['end'];
                 $row['label_pagada']    = $row['pagada'] == 1 ? 'SI' : 'NO';
                 $row['label_dia']       = $dias_semana[$row['day'] - 1];
-                $row['label_asistencia']    = $arr_estatus_asistencia[$row['asistencia']];
+                $row['label_asistencia']        = $arr_estatus_asistencia[$row['asistencia']];
+                $row['info_citas_simultaneas']  = array();
                 if (!empty($get_servicios)){
                     $phql   = " SELECT 
                                     a.*,
