@@ -943,27 +943,6 @@ return function (Micro $app,$di) {
                 }
             }
 
-            //  AUNQUE SEA UNA CITA FUERA DE HORARIO SE DEBE DE VERIFICAR QUE NO SE EMPALME
-            //  CON ALGUNA OTRA CITA DEL PACIENTE
-            if (is_numeric($id_motivo_cita_fuera_horario) && is_numeric($id_paciente)){
-                //  SE BUSCA SI EXISTE UNA CITA ACTIVA EN LA FECHA Y HORA DE LA CITA ORIGEN
-                //  PARA EL PACIENTE, ESTO PARA EVITAR DOS CITAS A LA MISMA HORA PARA EL PACIENTE
-                try{
-                    //  SE VERIFICA QUE EL DOCENTE O EL PACIENTE NO TENGAN UNA CITA
-                    //  QUE SE EMPALME CON LA HORA SOLICITADA
-                    $phql   = "SELECT * FROM fn_validar_citas_diarias(null , :id_paciente, :fecha_cita, :hora_inicio, :hora_termino)";
-                    $result = $db->query($phql, array(
-                        'id_paciente'       => $id_paciente,
-                        'fecha_cita'        => $fecha_cita,
-                        'hora_inicio'       => $hora_inicio,
-                        'hora_termino'      => $hora_termino,
-                    ));
-
-                } catch(\Exception $err){
-                    throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
-                }
-            }
-
             //  SI TRAE ID_AGENDA_CITA, ESTA SE CANCELA POR EL MOTIVO INDICADO
             if (!empty($id_agenda_cita_anterior)){
                 $phql   = "SELECT * FROM tbagenda_citas 
@@ -1031,6 +1010,27 @@ return function (Micro $app,$di) {
 
                 if (!$flag_exist){
                     throw new Exception("No se puede editar la cita indicada ya que no se encuentra activa");
+                }
+            }
+
+            //  AUNQUE SEA UNA CITA FUERA DE HORARIO SE DEBE DE VERIFICAR QUE NO SE EMPALME
+            //  CON ALGUNA OTRA CITA DEL PACIENTE
+            if (is_numeric($id_motivo_cita_fuera_horario) && is_numeric($id_paciente)){
+                //  SE BUSCA SI EXISTE UNA CITA ACTIVA EN LA FECHA Y HORA DE LA CITA ORIGEN
+                //  PARA EL PACIENTE, ESTO PARA EVITAR DOS CITAS A LA MISMA HORA PARA EL PACIENTE
+                try{
+                    //  SE VERIFICA QUE EL DOCENTE O EL PACIENTE NO TENGAN UNA CITA
+                    //  QUE SE EMPALME CON LA HORA SOLICITADA
+                    $phql   = "SELECT * FROM fn_validar_citas_diarias(null , :id_paciente, :fecha_cita, :hora_inicio, :hora_termino)";
+                    $result = $db->query($phql, array(
+                        'id_paciente'       => $id_paciente,
+                        'fecha_cita'        => $fecha_cita,
+                        'hora_inicio'       => $hora_inicio,
+                        'hora_termino'      => $hora_termino,
+                    ));
+
+                } catch(\Exception $err){
+                    throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
                 }
             }
             
@@ -1302,25 +1302,46 @@ return function (Micro $app,$di) {
             //  SE BUSCAN TODAS LAS CITAS SIMULTANEAS QUE TENGAN EL ID DE LA CITA ORIGINAL
             //  Y A ESTAS SE LES DEBE DE CAMBIAR EL DIA,HORARIO Y PROFESIONAL PARA QUE QUEDE
             //  IGUAL A LA CITA BASE, Y EDITAR EL ID A LA NUEVA CITA
-            $phql   = " UPDATE tbagenda_citas SET 
-                            fecha_cita = :fecha_cita,
-                            dia = :dia,
-                            hora_inicio = :hora_inicio,
-                            hora_termino = :hora_termino,
-                            id_profesional = :id_profesional,
-                            id_cita_simultanea = :nuevo_id_cita_simultanea
-                        WHERE id_cita_simultanea = :id_agenda_cita_anterior 
-                        AND activa = 1";
+            if (is_numeric($id_agenda_cita_anterior)){
 
-            $conexion->execute($phql,array(
-                'fecha_cita'        => $fecha_cita,
-                'dia'               => $dia,
-                'hora_inicio'       => $hora_inicio,
-                'hora_termino'      => $hora_termino,
-                'id_profesional'    => $id_profesional,
-                'nuevo_id_cita_simultanea'  => $id_agenda_cita,
-                'id_agenda_cita_anterior'   => $id_agenda_cita_anterior
-            ));
+                $flag_cita_simultanea   = false;
+                $phql   = "SELECT 1 FROM tbagenda_citas WHERE id_cita_simultanea = :id_agenda_cita_anterior
+                            AND activa = 1 LIMIT 1";
+
+                $result = $db->query($phql, array(
+                    'id_agenda_cita_anterior'   => $id_agenda_cita_anterior
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                if ($result) {
+                    while ($data = $result->fetch()) {
+                        $flag_cita_simultanea   = true;
+                    }
+                }
+
+                if ($flag_cita_simultanea){
+
+                    $phql   = " UPDATE tbagenda_citas SET 
+                                    fecha_cita = :fecha_cita,
+                                    dia = :dia,
+                                    hora_inicio = :hora_inicio,
+                                    hora_termino = :hora_termino,
+                                    id_profesional = :id_profesional,
+                                    id_cita_simultanea = :nuevo_id_cita_simultanea
+                                WHERE id_cita_simultanea = :id_agenda_cita_anterior 
+                                AND activa = 1";
+
+                    $conexion->execute($phql,array(
+                        'fecha_cita'        => $fecha_cita,
+                        'dia'               => $dia,
+                        'hora_inicio'       => $hora_inicio,
+                        'hora_termino'      => $hora_termino,
+                        'id_profesional'    => $id_profesional,
+                        'nuevo_id_cita_simultanea'  => $id_agenda_cita,
+                        'id_agenda_cita_anterior'   => $id_agenda_cita_anterior
+                    ));
+                }
+            }
 
 
             $conexion->commit();
