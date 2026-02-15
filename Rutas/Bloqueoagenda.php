@@ -219,6 +219,7 @@ return function (Micro $app,$di) {
             $label_bloqueo              = $request->getPost('label_bloqueo') ?? null;
             $id_profesional             = $request->getPost('id_profesional') ?? null;
             $usuario_solicitud          = $request->getPost('usuario_solicitud');
+            //  INDICA EL NUEVO ESTATUS DE LAS CITAS: PENDIENTE O CANCELAR
             $tipo_movimiento            = $request->getPost('tipo_movimiento') ?? null;
             $id_usuario_captura         = null;
 
@@ -307,6 +308,15 @@ return function (Micro $app,$di) {
         
                 while ($row = $result->fetch()) {
                     throw new Exception('Registro ya existente en el catalogo');
+                }
+
+                //  SE BUSCA EN EL CATALOGO EL MOTIVO DE CANCELACION DIA INHABIL
+                $phql   = "SELECT * FROM ctmotivos_cancelacion_cita WHERE clave = 'DI';";
+                $result = $db->query($phql);
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                while ($row = $result->fetch()) {
+                    $id_motivo_cancelacion_cita = $row['id'];
                 }
 
                 // INSERTAR NUEVO USUARIO
