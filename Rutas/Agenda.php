@@ -25,6 +25,7 @@ return function (Micro $app,$di) {
             $citas_pagadas   = $request->getQuery('citas_pagadas') ?? null;
             $citas_adeudo           = $request->getQuery('citas_adeudo') ?? null;
             $citas_pagadas_rango    = $request->getQuery('citas_pagadas_rango') ?? null;
+            $citas_fuera_horario    = $request->getQuery('citas_fuera_horario') ?? null;
         
             // Definir el query SQL
             $phql   = "SELECT 
@@ -85,9 +86,18 @@ return function (Micro $app,$di) {
             }
 
             if (!empty($citas_pagadas_rango)){
-                $phql   .= "AND a.pagada = 1 AND a.fecha_pago BETWEEN :fecha_inicio AND :fecha_termino ";
+                $phql   .= "AND a.pagada = 1 AND (a.fecha_pago BETWEEN :fecha_inicio AND :fecha_termino) ";
                 $values['fecha_inicio']     = $fecha_inicio;
                 $values['fecha_termino']    = $fecha_termino;
+            }
+
+            if (is_numeric($citas_fuera_horario)){
+                if ($citas_fuera_horario == -1 ){
+                    $phql   .= " AND a.id_motivo_cita_fuera_horario IS NOT NULL ";
+                } else {
+                    $phql   .= " AND a.id_motivo_cita_fuera_horario = :id_motivo_cita_fuera_horario ";
+                    $values['id_motivo_cita_fuera_horario'] = $citas_fuera_horario;
+                }
             }
 
             // Ejecutar el query y obtener el resultado
@@ -134,6 +144,8 @@ return function (Micro $app,$di) {
             $citas_adeudo       = $request->getQuery('citas_adeudo') ?? null;
             $citas_pagadas_rango    = $request->getQuery('citas_pagadas_rango') ?? null;
             $from_digital_record    = $request->getQuery('from_digital_record') ?? null;
+            $citas_fuera_horario    = $request->getQuery('citas_fuera_horario') ?? null;
+            $cita_simultanea        = $request->getQuery('cita_simultanea') ?? null;
 
             $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
             $arr_estatus_asistencia = [
@@ -188,7 +200,12 @@ return function (Micro $app,$di) {
                                     EXTRACT(YEAR FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text || '.' ||
                                     LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text, 2, '0')
                                 ELSE NULL
-                            END AS edad_actual
+                            END AS edad_actual,
+                            a.id_cita_simultanea,
+                            a.id_motivo_cita_fuera_horario,
+                            i.nombre as nombre_motivo_cita_fuera_horario,
+                            a.observaciones_motivo_cita_fuera_horario,
+                            COALESCE(j.num_citas_simultaneas,0) as num_citas_simultaneas
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
@@ -197,6 +214,14 @@ return function (Micro $app,$di) {
                         LEFT JOIN ctusuarios f ON a.id_usuario_cancelacion = f.id
                         LEFT JOIN ctusuarios g ON a.id_usuario_agenda = g.id
                         LEFT JOIN ctvariables_sistema h ON h.clave = 'dias_movimientos_citas_vencidas'
+                        LEFT JOIN ctmotivos_citas_fuera_horario i ON a.id_motivo_cita_fuera_horario = i.id
+                        LEFT JOIN LATERAL ( 
+                            SELECT t1.id_cita_simultanea,COUNT(*) AS num_citas_simultaneas  
+                            FROM  tbagenda_citas t1
+                            WHERE t1.id_cita_simultanea IS NOT NULL AND a.id = t1.id_cita_simultanea
+                            AND t1.activa = 1
+                            GROUP BY t1.id_cita_simultanea
+                        ) j ON j.id_cita_simultanea = a.id
                         WHERE 1 = 1 ";
             $values = array();
     
@@ -278,6 +303,20 @@ return function (Micro $app,$di) {
                 $values['fecha_termino']    = $fecha_termino;
             }
 
+            if (is_numeric($citas_fuera_horario)){
+                if ($citas_fuera_horario == -1 ){
+                    $phql   .= " AND a.id_motivo_cita_fuera_horario IS NOT NULL ";
+                } else {
+                    $phql   .= " AND a.id_motivo_cita_fuera_horario = :id_motivo_cita_fuera_horario ";
+                    $values['id_motivo_cita_fuera_horario'] = $citas_fuera_horario;
+                }
+            }
+
+            if (is_numeric($cita_simultanea)){
+                $phql   .= ' AND a.id_cita_simultanea = :cita_simultanea ';
+                $values['cita_simultanea']  = $cita_simultanea;
+            }
+
             if (empty($from_digital_record)){
                 $phql   .= ' ORDER BY a.fecha_cita,a.hora_inicio,a.hora_termino ';
             } else {
@@ -300,7 +339,8 @@ return function (Micro $app,$di) {
                 $row['fecha_completa']  = $dias_semana[$row['day'] - 1].' '.FuncionesGlobales::formatearFecha($row['fecha_cita']) . ' de '. $row['start']. ' a '.$row['end'];
                 $row['label_pagada']    = $row['pagada'] == 1 ? 'SI' : 'NO';
                 $row['label_dia']       = $dias_semana[$row['day'] - 1];
-                $row['label_asistencia']    = $arr_estatus_asistencia[$row['asistencia']];
+                $row['label_asistencia']        = $arr_estatus_asistencia[$row['asistencia']];
+                $row['info_citas_simultaneas']  = array();
                 if (!empty($get_servicios)){
                     $phql   = " SELECT 
                                     a.*,
@@ -458,6 +498,7 @@ return function (Micro $app,$di) {
             $usuario_solicitud          = $request->getPost('usuario_solicitud');
             $tipo_movimiento            = $request->getPost('tipo_movimiento');
             $arr_id_agenda_cita         = $request->getPost('arr_id_agenda_cita') ?? array();
+            $tipo_accion_cita_simultanea    = $request->getPost('tipo_accion_cita_simultanea') ?? null;
 
             if (!empty($id_agenda_cita)){
                 $arr_id_agenda_cita = array($id_agenda_cita);
@@ -497,9 +538,11 @@ return function (Micro $app,$di) {
                 $result = $db->query($phql,array('id_agenda_cita' => $id_agenda_cita));
                 $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
+                $arr_cita_verificar = array();
                 $flag_activa    = false;
                 if ($result){
                     while($data = $result->fetch()){
+                        $arr_cita_verificar = $data;
                         $flag_activa    = true;
 
                         if ($data['vencida'] == 1){
@@ -525,6 +568,7 @@ return function (Micro $app,$di) {
                                 observaciones_cancelacion = :observaciones_cancelacion,
                                 id_usuario_cancelacion = :id_usuario_cancelacion,
                                 fecha_cancelacion = NOW() ";
+
                 $values = array(
                     'id'                        => $id_agenda_cita,
                     'id_motivo_cancelacion'     => $id_motivo_cancelacion,
@@ -534,14 +578,104 @@ return function (Micro $app,$di) {
                 );
 
                 if ($tipo_movimiento == 'pendiente'){
-                    $phql   .= ' , asistencia = 0 ';
+                    $phql   .= ' , asistencia = 0, 
+                                    id_cita_simultanea = NULL,
+                                    id_motivo_cita_fuera_horario = null,
+                                    observaciones_motivo_cita_fuera_horario = null ';
                 }
 
                 $phql   .= " WHERE id = :id ";
                 $result = $conexion->execute($phql, $values);
+
+                //  SE VERIFICAN LAS CITAS SIMULTANEAS AÑADIDAS A LA CITA BASE
+                $phql   = " SELECT COUNT(*) as citas_simultaneas FROM tbagenda_citas 
+                            WHERE id_cita_simultanea = :id_cita_simultanea AND activa = 1";
+                $result = $conexion->query($phql, array(
+                    'id_cita_simultanea'    => $id_agenda_cita
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result){
+                    while($data = $result->fetch()){
+                        if ($data['citas_simultaneas'] > 0 && empty($tipo_accion_cita_simultanea)){
+                            throw new Exception('La cita del día '.$arr_cita_verificar['fecha_cita'].' del paciente '.$arr_cita_verificar['nombre_completo'].' Cuenta con citas simultaneas y no se ha especificado la acción a tomar para estos casos');
+                        }
+
+                        if ($data['citas_simultaneas'] > 0 && $tipo_accion_cita_simultanea == 'todas'){
+                            //  SE REALIZA EL MISMO MOVIMIENTO A TODAS LAS CITAS SIMULTANEAS
+                            //  Y ESTAS CITAS PASAN A SER CITAS INDIVIDUALES
+                            $phql   = " UPDATE tbagenda_citas SET 
+                                            activa = :activa,
+                                            id_motivo_cancelacion = :id_motivo_cancelacion,
+                                            observaciones_cancelacion = :observaciones_cancelacion,
+                                            id_usuario_cancelacion = :id_usuario_cancelacion,
+                                            fecha_cancelacion = NOW(),
+                                            id_cita_simultanea = NULL,
+                                            id_motivo_cita_fuera_horario = null,
+                                            observaciones_motivo_cita_fuera_horario = null ";
+
+                            $values = array(
+                                'id'                        => $id_agenda_cita,
+                                'id_motivo_cancelacion'     => $id_motivo_cancelacion,
+                                'observaciones_cancelacion' => $observaciones_cancelacion.' Cita simultanea: '.$id_agenda_cita.' con el paciente: '.$arr_cita_verificar['nombre_completo'],
+                                'id_usuario_cancelacion'    => $id_usuario_solicitud,
+                                'activa'                    => $activa
+                            );
+
+                            if ($tipo_movimiento == 'pendiente'){
+                                $phql   .= ' , asistencia = 0 ';
+                            }
+
+                            $phql   .= " WHERE id_cita_simultanea = :id AND activa = 1";
+                            $result_update = $conexion->execute($phql, $values);
+                        }
+
+                        if ($data['citas_simultaneas'] > 0 && $tipo_accion_cita_simultanea == 'solo_base'){
+                            //  1. LA PRIMERA CITA SIMULTANEA PASA A SER LA CITA BASE
+                            //  2. LAS DEMAS CITAS SIMULTANEAS DE LA ANTERIOR CITA BASE O DE ESTE CONJUNTO PASAN A SER
+                            //      DE A NUEVA CITA BASE
+                            $phql   = " SELECT id FROM tbagenda_citas 
+                                        WHERE id_cita_simultanea = :id_cita_simultanea AND activa = 1 ORDER BY fecha_captura ASC LIMIT 1";
+
+                            $nuevo_id_cita_base = null;
+                            $result_id  = $conexion->query($phql, array(
+                                'id_cita_simultanea'    => $id_agenda_cita
+                            ));
+                            $result_id->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                            if ($result_id){
+                                while($data_id = $result_id->fetch()){
+                                    $nuevo_id_cita_base = $data_id['id'];
+                                }
+                            }
+
+                            //  SE VUELVE CITA BASE
+                            $phql   = " UPDATE tbagenda_citas SET 
+                                            id_cita_simultanea = null, 
+                                            id_motivo_cita_fuera_horario = null,
+                                            observaciones_motivo_cita_fuera_horario = null
+                                        WHERE id = :nuevo_id_cita_base";
+
+                            $result_nueva_base  = $conexion->execute($phql, array(
+                                'nuevo_id_cita_base'    => $nuevo_id_cita_base
+                            ));
+
+                            //  LAS DEMAS CITAS SIMULTANEAS PASAN A SER DE ESTA CITA
+                            $phql   = " UPDATE tbagenda_citas SET 
+                                            id_cita_simultanea = :nuevo_id_cita_base
+                                        WHERE id_cita_simultanea = :id_agenda_cita AND activa = 1";
+
+                            $result_nueva_base  = $conexion->execute($phql, array(
+                                'nuevo_id_cita_base'    => $nuevo_id_cita_base,
+                                'id_agenda_cita'        => $id_agenda_cita
+                            ));
+                        }
+                    }
+                }
             }
             
             $conexion->commit();
+            //$conexion->rollback();
 
             // RESPUESTA JSON
             $response = new Response();
@@ -637,12 +771,101 @@ return function (Micro $app,$di) {
             $hora_termino       = $request->getPost('hora_termino');
             $usuario_solicitud  = $request->getPost('usuario_solicitud');
             $id_agenda_cita_anterior    = $request->getPost('id_agenda_cita');
-            $accion                     = $request->getPost('accion');
-            $id_cita_programada         = null;
-            $pagada                     = 0;
-            $fecha_pago                 = null;
-            $id_usuario_pago            = null;
-            $forma_pago                 = null;
+            $id_cita_simultanea         = $request->getPost('id_cita_simultanea') ?? null;
+            $id_motivo_cita_fuera_horario               = $request->getPost('id_motivo_cita_fuera_horario') ?? null;
+            $clave_motivo_cita_fuera_horario            = $request->getPost('clave_motivo_cita_fuera_horario') ?? null;
+            $observaciones_motivo_cita_fuera_horario    = $request->getPost('observaciones_motivo_cita_fuera_horario') ?? null;
+            $accion                                     = $request->getPost('accion');
+            $id_cita_programada                         = null;
+            $pagada                                     = 0;
+            $fecha_pago                                 = null;
+            $id_usuario_pago                            = null;
+            $forma_pago                                 = null;
+
+            //  SE VALIDA QUE UNA CITA ORDINARIA QUE YA TIENE CITAS SIMUTLANEAS NO PUEDE
+            //  PASAR A SER UNA CITA SIMULTANEA
+            if (is_numeric($id_agenda_cita_anterior) && is_numeric($id_cita_simultanea)){
+                $phql   = " SELECT COUNT(*) as citas_simultaneas FROM tbagenda_citas 
+                            WHERE id_cita_simultanea = :id_agenda_cita_anterior AND activa = 1";
+                
+                $result = $db->query($phql, array(
+                    'id_agenda_cita_anterior'   => $id_agenda_cita_anterior
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result){
+                    while($data = $result->fetch()){
+                        if ($data['citas_simultaneas'] > 0){
+                            throw new Exception('La cita no puede marcarse como cita simultanea ya que cuenta con '.$data['citas_simultaneas'].' citas adjutan a esta.');
+                        }
+                    }
+                }
+
+            }
+
+            if (is_numeric($id_cita_simultanea) && $clave_motivo_cita_fuera_horario == 'CS'){
+                //  SE SACA LA INFORMACION DE LA CITA SIMULTANEA
+                $phql   = "SELECT * FROM tbagenda_citas WHERE id = :id";
+
+                $result = $db->query($phql, array(
+                    'id'    => $id_cita_simultanea
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                while ($row = $result->fetch()) {
+                    //  VALIDA QUE LA CITA SIMULTANEA ESTE ACTIVA
+                    if ($row['activa'] != 1){
+                        throw new Exception('Cita origen no disponible para registro de cita simultanea');
+                    }
+
+                    $phql   = " SELECT a.valor::INT as max_citas_simultaneas, t1.citas_simultaneas  FROM ctvariables_sistema a 
+                                LEFT JOIN (
+                                    SELECT COUNT(*) AS citas_simultaneas FROM tbagenda_citas a 
+                                    WHERE id_cita_simultanea = :id_cita_simultanea AND a.activa = 1
+                                ) t1 ON 1 = 1
+                                WHERE a.clave = 'max_citas_simultaneas';";
+
+                    $result_count   = $db->query($phql, array(
+                        'id_cita_simultanea'    => $id_cita_simultanea
+                    ));
+                    $result_count->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_count){
+                        while($data_count = $result_count->fetch()){
+                            if ($data_count['max_citas_simultaneas'] < ($data_count['citas_simultaneas'] + 1)){
+                                throw new Exception('Maximo de citas simultaneas alcanzado, Limite: '.$data_count['max_citas_simultaneas']);
+                            }
+                        }
+                    }
+
+                    //  SE OBTIENEN TODOS LOS DATOS DE LA CITA ORIGEN
+                    $id_locacion    = $row['id_locacion'];
+                    $id_profesional = $row['id_profesional'];
+                    $dia            = $row['dia'];
+                    $hora_inicio    = $row['hora_inicio'];
+                    $hora_termino   = $row['hora_termino'];
+                    $fecha_cita     = $row['fecha_cita'];
+
+                    //  SE BUSCAN LOS SERVICIOS
+                    $phql   = "SELECT * FROM tbagenda_citas_servicios WHERE id_agenda_cita = :id_cita_simultanea";
+
+                    $result_servicio    = $db->query($phql, array(
+                        'id_cita_simultanea'    => $id_agenda_cita_anterior != null ? $id_agenda_cita_anterior : $id_cita_simultanea
+                    ));
+                    $result_servicio->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_servicio){
+                        while($data_servicio = $result_servicio->fetch()){
+                            $servicios[]    = array(
+                                'id_servicio'   => $data_servicio['id_servicio'],
+                                'duracion'      => $data_servicio['duracion']
+                            );
+                        }
+                    }
+                    
+                }
+                
+            }
             
 
             //  SE VERIFICAN LOS CAMPOS OBLIGATORIOS
@@ -662,7 +885,10 @@ return function (Micro $app,$di) {
                 throw new Exception('Fecha de cita vacia o no valida');
             }
 
-            $fecha_cita = DateTime::createFromFormat('d/m/Y', $fecha_cita)->format('Y-m-d');
+            //  SI ES CITA SIMULTANEA Y LLEGO A ESTE PUNTO NO SE OCUPA FORAMTEAR LA FECHA
+            if (!is_numeric($id_cita_simultanea)){
+                $fecha_cita = DateTime::createFromFormat('d/m/Y', $fecha_cita)->format('Y-m-d');
+            }
 
             if (empty($hora_inicio)){
                 throw new Exception('Fecha de cita vacia o no valida');
@@ -694,24 +920,26 @@ return function (Micro $app,$di) {
 
             //  SE VERIFICA QUE NO EXISTA UN DIA INHABIL PARA LA LOCACION
             //  O SI EL PROFESIONAL ESTA DISPONIBLE POR DIAS DE VACACIONES
-            $phql   = " SELECT * FROM tbfechas_bloqueo_agenda 
-                        WHERE (:fecha_cita BETWEEN fecha_inicio AND fecha_termino) AND
-                        (
-                            (id_locacion IS NOT NULL AND id_locacion = :id_locacion AND id_profesional IS NULL) OR
-                            (id_locacion IS NULL AND id_profesional = :id_profesional)
-                        ) ORDER BY tipo_bloqueo ASC LIMIT 1;
-                        ";
-            $result = $db->query($phql,array(
-                'fecha_cita'        => $fecha_cita,
-                'id_locacion'       => $id_locacion,
-                'id_profesional'    => $id_profesional,
-            ));
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+            if ($clave_motivo_cita_fuera_horario == null || $clave_motivo_cita_fuera_horario == 'CS'){
+                $phql   = " SELECT * FROM tbfechas_bloqueo_agenda 
+                            WHERE (:fecha_cita BETWEEN fecha_inicio AND fecha_termino) AND
+                            (
+                                (id_locacion IS NOT NULL AND id_locacion = :id_locacion AND id_profesional IS NULL) OR
+                                (id_locacion IS NULL AND id_profesional = :id_profesional)
+                            ) ORDER BY tipo_bloqueo ASC LIMIT 1;
+                            ";
+                $result = $db->query($phql,array(
+                    'fecha_cita'        => $fecha_cita,
+                    'id_locacion'       => $id_locacion,
+                    'id_profesional'    => $id_profesional,
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
-            if ($result){
-                while($data = $result->fetch()){
-                    $tipo_bloqueo   = $data['tipo_bloqueo'] == 1 ? 'la locaci&oacute;n' : 'el profesional';
-                    throw new Exception("Fecha no disponible para $tipo_bloqueo por el motivo de ".$data['label_bloqueo']);
+                if ($result){
+                    while($data = $result->fetch()){
+                        $tipo_bloqueo   = $data['tipo_bloqueo'] == 1 ? 'la locaci&oacute;n' : 'el profesional';
+                        throw new Exception("Fecha no disponible para $tipo_bloqueo por el motivo de ".$data['label_bloqueo']);
+                    }
                 }
             }
 
@@ -746,6 +974,10 @@ return function (Micro $app,$di) {
                             $clave_cancelacion  = 'CPREA';
                         }
 
+                        if (is_numeric($id_cita_simultanea)){
+                            $clave_cancelacion  = 'CS';
+                        }
+
                         //  SE OBTIENE EL ID DEL MOTIVO CON CLAVE CAS
                         $phql   = "SELECT * FROM ctmotivos_cancelacion_cita WHERE clave = :clave ";
                         $result_motivo  = $db->query($phql,array('clave' => $clave_cancelacion));
@@ -778,6 +1010,27 @@ return function (Micro $app,$di) {
 
                 if (!$flag_exist){
                     throw new Exception("No se puede editar la cita indicada ya que no se encuentra activa");
+                }
+            }
+
+            //  AUNQUE SEA UNA CITA FUERA DE HORARIO SE DEBE DE VERIFICAR QUE NO SE EMPALME
+            //  CON ALGUNA OTRA CITA DEL PACIENTE
+            if (is_numeric($id_motivo_cita_fuera_horario) && is_numeric($id_paciente)){
+                //  SE BUSCA SI EXISTE UNA CITA ACTIVA EN LA FECHA Y HORA DE LA CITA ORIGEN
+                //  PARA EL PACIENTE, ESTO PARA EVITAR DOS CITAS A LA MISMA HORA PARA EL PACIENTE
+                try{
+                    //  SE VERIFICA QUE EL DOCENTE O EL PACIENTE NO TENGAN UNA CITA
+                    //  QUE SE EMPALME CON LA HORA SOLICITADA
+                    $phql   = "SELECT * FROM fn_validar_citas_diarias(null , :id_paciente, :fecha_cita, :hora_inicio, :hora_termino)";
+                    $result = $db->query($phql, array(
+                        'id_paciente'       => $id_paciente,
+                        'fecha_cita'        => $fecha_cita,
+                        'hora_inicio'       => $hora_inicio,
+                        'hora_termino'      => $hora_termino,
+                    ));
+
+                } catch(\Exception $err){
+                    throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
                 }
             }
             
@@ -910,28 +1163,30 @@ return function (Micro $app,$di) {
                 throw new Execption('No existe registro de apertura de agenda para la locaci&oacute;n');
             }
 
-            try{
-                //  SE VERIFICA QUE EL DOCENTE O EL PACIENTE NO TENGAN UNA CITA
-                //  QUE SE EMPALME CON LA HORA SOLICITADA
-                $phql   = "SELECT * FROM fn_validar_citas_diarias(:id_profesional , :id_paciente, :fecha_cita, :hora_inicio, :hora_termino)";
-                $result = $db->query($phql, array(
-                    'id_profesional'    => $id_profesional,
-                    'id_paciente'       => $id_paciente,
-                    'fecha_cita'        => $fecha_cita,
-                    'hora_inicio'       => $hora_inicio,
-                    'hora_termino'      => $hora_termino,
-                ));
-                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+            if ($clave_motivo_cita_fuera_horario == ''){
+                try{
+                    //  SE VERIFICA QUE EL DOCENTE O EL PACIENTE NO TENGAN UNA CITA
+                    //  QUE SE EMPALME CON LA HORA SOLICITADA
+                    $phql   = "SELECT * FROM fn_validar_citas_diarias(:id_profesional , :id_paciente, :fecha_cita, :hora_inicio, :hora_termino)";
+                    $result = $db->query($phql, array(
+                        'id_profesional'    => $id_profesional,
+                        'id_paciente'       => $id_paciente,
+                        'fecha_cita'        => $fecha_cita,
+                        'hora_inicio'       => $hora_inicio,
+                        'hora_termino'      => $hora_termino,
+                    ));
+                    $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
-                $flag_validar   = false;
-                if ($result){
-                    while($data = $result->fetch()){
-                        $flag_create    = true;
+                    $flag_validar   = false;
+                    if ($result){
+                        while($data = $result->fetch()){
+                            $flag_create    = true;
+                        }
                     }
-                }
 
-            } catch(\Exception $err){
-                throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
+                } catch(\Exception $err){
+                    throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
+                }
             }
 
             //  SE BUSCAN LOS COSTOS DE LOS SERVICIOS
@@ -964,7 +1219,11 @@ return function (Micro $app,$di) {
                                         pagada,
                                         fecha_pago,
                                         id_usuario_pago,
-                                        forma_pago) 
+                                        forma_pago,
+                                        id_cita_simultanea,
+                                        id_motivo_cita_fuera_horario,
+                                        observaciones_motivo_cita_fuera_horario
+                                        ) 
                         VALUES( :id_locacion,
                                 :id_paciente,
                                 :fecha_cita,
@@ -979,7 +1238,10 @@ return function (Micro $app,$di) {
                                 :pagada,
                                 :fecha_pago,
                                 :id_usuario_pago,
-                                :forma_pago
+                                :forma_pago,
+                                :id_cita_simultanea,
+                                :id_motivo_cita_fuera_horario,
+                                :observaciones_motivo_cita_fuera_horario
                                 ) RETURNING *;";
 
             $values = array(
@@ -997,6 +1259,9 @@ return function (Micro $app,$di) {
                 'fecha_pago'            => $fecha_pago,
                 'id_usuario_pago'       => $id_usuario_pago,
                 'forma_pago'            => $forma_pago,
+                'id_cita_simultanea'    => $id_cita_simultanea,
+                'id_motivo_cita_fuera_horario'              => $id_motivo_cita_fuera_horario,
+                'observaciones_motivo_cita_fuera_horario'   => $observaciones_motivo_cita_fuera_horario
             );
 
             $result = $conexion->query($phql, $values);
@@ -1015,14 +1280,14 @@ return function (Micro $app,$di) {
 
             $calcula_total  = 0;
             foreach($servicios as $servicio){
-                $calcula_total  = $calcula_total + $servicio['costo'];
+                $calcula_total  = $calcula_total + $arr_servicios[$servicio['id_servicio']]['costo'];
                 //  SE OBTIENEN LOS COSTOS REGISTRADOS POR SERVICIO
                 $phql   = "INSERT INTO tbagenda_citas_servicios (id_agenda_cita,id_servicio,duracion,costo)
                             VALUES (:id_agenda_cita,:id_servicio,:duracion,:costo)";
                 $result = $conexion->execute($phql, array(
                     'id_agenda_cita'    => $id_agenda_cita,
                     'id_servicio'       => $servicio['id_servicio'],
-                    'duracion'          => $servicio['duracion'] * 60,
+                    'duracion'          => is_numeric($id_cita_simultanea) ? $servicio['duracion'] : $servicio['duracion'] * 60,
                     'costo'             => $arr_servicios[$servicio['id_servicio']]['costo'],
                 ));
             }
@@ -1034,7 +1299,50 @@ return function (Micro $app,$di) {
                 'id_agenda_cita'    => $id_agenda_cita
             ));
 
-            //  CAMBIO PARA DEV 
+            //  SE BUSCAN TODAS LAS CITAS SIMULTANEAS QUE TENGAN EL ID DE LA CITA ORIGINAL
+            //  Y A ESTAS SE LES DEBE DE CAMBIAR EL DIA,HORARIO Y PROFESIONAL PARA QUE QUEDE
+            //  IGUAL A LA CITA BASE, Y EDITAR EL ID A LA NUEVA CITA
+            if (is_numeric($id_agenda_cita_anterior)){
+
+                $flag_cita_simultanea   = false;
+                $phql   = "SELECT 1 FROM tbagenda_citas WHERE id_cita_simultanea = :id_agenda_cita_anterior
+                            AND activa = 1 LIMIT 1";
+
+                $result = $db->query($phql, array(
+                    'id_agenda_cita_anterior'   => $id_agenda_cita_anterior
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                if ($result) {
+                    while ($data = $result->fetch()) {
+                        $flag_cita_simultanea   = true;
+                    }
+                }
+
+                if ($flag_cita_simultanea){
+
+                    $phql   = " UPDATE tbagenda_citas SET 
+                                    fecha_cita = :fecha_cita,
+                                    dia = :dia,
+                                    hora_inicio = :hora_inicio,
+                                    hora_termino = :hora_termino,
+                                    id_profesional = :id_profesional,
+                                    id_cita_simultanea = :nuevo_id_cita_simultanea
+                                WHERE id_cita_simultanea = :id_agenda_cita_anterior 
+                                AND activa = 1";
+
+                    $conexion->execute($phql,array(
+                        'fecha_cita'        => $fecha_cita,
+                        'dia'               => $dia,
+                        'hora_inicio'       => $hora_inicio,
+                        'hora_termino'      => $hora_termino,
+                        'id_profesional'    => $id_profesional,
+                        'nuevo_id_cita_simultanea'  => $id_agenda_cita,
+                        'id_agenda_cita_anterior'   => $id_agenda_cita_anterior
+                    ));
+                }
+            }
+
 
             $conexion->commit();
 
@@ -1269,6 +1577,36 @@ return function (Micro $app,$di) {
             return $response;
             
         } catch (\Exception $e) { 
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->get('/motivos_citas_fuera_horario/show', function () use ($app,$db,$request) {
+        try{
+
+            //  SE BUSCA SI EXISTE UN REGISTRO DE APERTURA DE AGENDA
+            $phql   = "SELECT * FROM ctmotivos_citas_fuera_horario ORDER BY nombre ASC";
+
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $arr_return = array();
+            if ($result){
+                while($data = $result->fetch()){
+                    $arr_return[]   = $data;
+                }
+            }
+
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');
