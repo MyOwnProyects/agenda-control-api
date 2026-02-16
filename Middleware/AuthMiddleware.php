@@ -3,33 +3,74 @@
 namespace Middleware;
 
 use Phalcon\Http\Response;
+use Services\JwtService;
+use Services\BlacklistService;
+use Exception;
 
 class AuthMiddleware
 {
     public function __invoke($app)
     {
-        // Obtener el servicio request desde el contenedor DI
         $request = $app->getDI()->get('request');
-
-        // Obtener el token de autorización de los encabezados
-        $token = $request->getHeader('Authorization');
-
-        // // Verificar si el token es válido
-        // if (!$token || $token !== 'Bearer your-secret-token') {
-        //     // Si no está autorizado, devolver una respuesta 401
-        //     $response = new Response();
-        //     $response->setStatusCode(401, "Unauthorized");
-        //     $response->setJsonContent([
-        //         'status'  => 'error',
-        //         'message' => 'Acceso no autorizado',
-        //     ]);
-        //     $response->send();
-
-        //     // Detener la ejecución del script
-        //     exit;
-        // }
-
-        // Si está autorizado, permitir continuar
-        return true;
+        $db = $app->getDI()->get('db');
+        
+        // Obtener token del header Authorization
+        $authHeader = $request->getHeader('Authorization');
+        
+        if (!$authHeader) {
+            return $this->unauthorized($app, 'Token no proporcionado');
+        }
+        
+        // Verificar formato: "Bearer {token}"
+        if (!preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
+            return $this->unauthorized($app, 'Formato de token inválido. Use: Bearer {token}');
+        }
+        
+        $token = $matches[1];
+        
+        try {
+            // Validar token
+            $jwtService = new JwtService();
+            $payload = $jwtService->validateToken($token);
+            
+            // Verificar que sea access token
+            if (!isset($payload['type']) || $payload['type'] !== 'access') {
+                return $this->unauthorized($app, 'Tipo de token inválido. Use access token.');
+            }
+            
+            // Verificar que NO esté en blacklist
+            $blacklistService = new BlacklistService($db);
+            if ($blacklistService->isBlacklisted($payload['jti'])) {
+                return $this->unauthorized($app, 'Token revocado');
+            }
+            
+            // Guardar usuario autenticado en DI
+            $app->getDI()->setShared('authenticatedUser', function() use ($payload) {
+                return (object)[
+                    'id'        => $payload['sub'],
+                    'username'  => $payload['username'] ?? null,
+                    'nombre'    => $payload['nombre_completo'] ?? null,
+                ];
+            });
+            
+            return true;
+            
+        } catch (Exception $e) {
+            error_log('JWT Validation Error: ' . $e->getMessage());
+            return $this->unauthorized($app, $e->getMessage());
+        }
+    }
+    
+    private function unauthorized($app, $message)
+    {
+        $response = new Response();
+        $response->setStatusCode(401, "Unauthorized");
+        $response->setJsonContent([
+            'status'    => 'error',
+            'message'   => $message,
+            'validado'  => false,
+        ]);
+        $response->send();
+        exit;
     }
 }
