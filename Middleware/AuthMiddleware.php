@@ -56,7 +56,6 @@ class AuthMiddleware
             return true;
             
         } catch (Exception $e) {
-            error_log('JWT Validation Error: ' . $e->getMessage());
             return $this->unauthorized($app, $e->getMessage());
         }
     }
