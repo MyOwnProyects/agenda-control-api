@@ -167,4 +167,197 @@ return function (Micro $app,$di) {
         }
         
     });
+
+    $app->get('/reportes/general_citas', function () use ($app,$db,$request) {
+        try{
+            //  REPORTE GENERAL DE CITAS EN EL RANGO DE FECHAS
+            //  INCLUYE INFORMACION GENERAL DEL PACIENTES Y DE LA CITA
+            $id_locacion    = $request->getQuery('id_locacion');
+            $activa         = $request->getQuery('activa') ?? null;
+            $id_profesional = $request->getQuery('id_profesional') ?? null;
+            $id_paciente    = $request->getQuery('id_paciente') ?? null;
+            $rango_fechas   = $request->getQuery('rango_fechas') ?? null;
+
+            $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+            $arr_estatus_asistencia = [
+                0   => 'FALTA',
+                1   => 'ASISTENCIA',
+                2   => 'RETARDO',
+                3   => 'ACTIVIDAD EN CASA',   
+                null    => 'Sin asignar' 
+            ];
+
+            $arr_estatus_cita   = array(
+                0   => 'CANCELADA',
+                1   => 'ACTIVA',
+                2   => 'PENDIENTE DE AGENDAR',
+            );
+
+            
+            $phql   = " SELECT  
+                            a.id as id_agenda_cita,
+                            a.id_cita_programada,
+                            a.asistencia,
+                            a.dia as day,
+                            a.fecha_cita,
+                            TO_CHAR(a.hora_inicio, 'HH24:MI') AS start,
+                            TO_CHAR(a.hora_termino, 'HH24:MI') AS end,
+                            CEIL(EXTRACT(EPOCH FROM (a.hora_termino - a.hora_inicio)) / 60) AS duracion,
+                            (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
+                            (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) as nombre_profesional,
+                            a.id_profesional,
+                            b.celular,
+                            b.primer_apellido,
+                            COALESCE(b.segundo_apellido,'') as segundo_apellido,
+                            b.nombre,
+                            a.total,
+                            a.id_cita_reagendada,
+                            a.id_paciente,
+                            a.activa,
+                            d.nombre as nombre_locacion,
+                            a.fecha_captura,
+                            a.fecha_cancelacion,
+                            e.nombre as motivo_cancelacion,
+                            (f.primer_apellido|| ' ' ||COALESCE(f.segundo_apellido,'')||' '||f.nombre) as usuario_cancelacion,
+                            (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as usuario_captura,
+                            a.observaciones_cancelacion,
+                            (CASE WHEN (a.fecha_cita + (h.valor)::integer * INTERVAL '1 day') < NOW()::DATE THEN 1 ELSE 0 END) as vencida,
+                            a.id_locacion,
+                            a.pagada,
+                            a.fecha_pago,
+                            a.forma_pago,
+                            CASE 
+                                WHEN b.fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text, 2, '0')
+                                ELSE NULL
+                            END AS edad_actual,
+                            a.id_cita_simultanea,
+                            a.id_motivo_cita_fuera_horario,
+                            i.nombre as nombre_motivo_cita_fuera_horario,
+                            a.observaciones_motivo_cita_fuera_horario,
+                            COALESCE(j.num_citas_simultaneas,0) as num_citas_simultaneas
+                        FROM tbagenda_citas a 
+                        LEFT JOIN ctpacientes b ON a.id_paciente = b.id
+                        LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
+                        LEFT JOIN ctlocaciones d ON a.id_locacion = d.id
+                        LEFT JOIN ctmotivos_cancelacion_cita e ON a.id_motivo_cancelacion = e.id
+                        LEFT JOIN ctusuarios f ON a.id_usuario_cancelacion = f.id
+                        LEFT JOIN ctusuarios g ON a.id_usuario_agenda = g.id
+                        LEFT JOIN ctvariables_sistema h ON h.clave = 'dias_movimientos_citas_vencidas'
+                        LEFT JOIN ctmotivos_citas_fuera_horario i ON a.id_motivo_cita_fuera_horario = i.id
+                        LEFT JOIN LATERAL ( 
+                            SELECT t1.id_cita_simultanea,COUNT(*) AS num_citas_simultaneas  
+                            FROM  tbagenda_citas t1
+                            WHERE t1.id_cita_simultanea IS NOT NULL AND a.id = t1.id_cita_simultanea
+                            AND t1.activa = 1
+                            GROUP BY t1.id_cita_simultanea
+                        ) j ON j.id_cita_simultanea = a.id
+                        WHERE 1 = 1 ";
+            $values = array();
+
+            if (!empty($id_locacion)) {
+                $phql           .= " AND a.id_locacion = :id_locacion ";
+                $values['id_locacion']  = $id_locacion;
+            }
+
+            if (!empty($rango_fechas)){
+                $phql   .= " AND a.fecha_cita BETWEEN :fecha_inicio AND :fecha_termino ";
+                $values['fecha_inicio']     = $rango_fechas['fecha_inicio'];
+                $values['fecha_termino']    = $rango_fechas['fecha_termino'];
+            }
+
+            if (is_numeric($activa)){
+                $phql               .= " AND a.activa = :activa";
+                $values['activa']   = $activa;
+            }
+
+            if (is_numeric($id_profesional)){
+                $phql           .= " AND a.id_profesional = :id_profesional";
+                $values['id_profesional']   = $id_profesional;
+            }
+
+            if (is_numeric($id_paciente)){
+                $phql           .= " AND a.id_paciente = :id_paciente";
+                $values['id_paciente']  = $id_paciente;
+            }
+
+            if (!empty($tipo_busqueda)){
+
+                if ($tipo_busqueda == 'activas'){
+                    $phql   .= " AND a.activa = 1 ";
+                }
+
+                if ($tipo_busqueda == 'pendientes'){
+                    $phql   .= " AND a.activa = 2 ";
+                }
+
+                if ($tipo_busqueda == 'canceladas'){
+                    $phql   .= " AND a.activa = 0 ";
+                }
+            }
+
+            $phql   .= ' ORDER BY a.fecha_cita DESC,a.hora_inicio DESC,a.hora_termino DESC';
+    
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $data = [];
+            while ($row = $result->fetch()) {
+                $row['servicios']   = array();
+                $row['estatus']     = $arr_estatus_cita[$row['activa']];
+                $row['fecha_completa']  = $dias_semana[$row['day'] - 1].' '.FuncionesGlobales::formatearFecha($row['fecha_cita']) . ' de '. $row['start']. ' a '.$row['end'];
+                $row['label_pagada']    = $row['pagada'] == 1 ? 'SI' : 'NO';
+                $row['label_dia']       = $dias_semana[$row['day'] - 1];
+                $row['label_asistencia']        = $arr_estatus_asistencia[$row['asistencia']];
+                $row['info_citas_simultaneas']  = array();
+                $phql   = " SELECT 
+                                a.*,
+                                b.clave,
+                                b.nombre as nombre_servicio,
+                                b.codigo_color
+                            FROM tbagenda_citas_servicios a 
+                            LEFT JOIN ctservicios b ON a.id_servicio = b.id
+                            WHERE a.id_agenda_cita = :id_agenda_cita 
+                            ORDER BY b.costo DESC";
+                $result_servicios = $db->query($phql,array('id_agenda_cita' => $row['id_agenda_cita']));
+                $result_servicios->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result_servicios){
+                    while($data_servicios = $result_servicios->fetch()){
+                        $data_servicios['duracion'] = $data_servicios['duracion'] / 60;
+                        $row['servicios'][]         = $data_servicios;
+                    }
+                }
+
+                $row['codigo_color']    = $row['servicios'][0]['codigo_color'];
+
+                $row['hora_cita']  = $row['start'] . ' - ' . $row['end'];
+                $row['num_servicios'] = count($row['servicios']);
+                if (count($row['servicios']) == 1){
+                    $row['num_servicios_costo'] = $row['servicios'][0]['clave'].' / $'.$row['total'];
+                } else {
+                    $row['num_servicios_costo'] = count($row['servicios']).' / $'.$row['total'];
+                }
+
+                $row['edad_actual'] = empty($row['edad_actual']) ? 'S/E' : $row['edad_actual'];
+                $row['nombre_completo'] = $row['nombre_completo'].' ('.$row['edad_actual'].')';
+                $data[] = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
 };
