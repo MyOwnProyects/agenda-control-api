@@ -178,6 +178,10 @@ return function (Micro $app,$di) {
             $id_paciente    = $request->getQuery('id_paciente') ?? null;
             $rango_fechas   = $request->getQuery('rango_fechas') ?? null;
 
+            if (empty($rango_fechas)){
+                throw new Exception('Rango de fechas vacio');
+            }
+
             $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
             $arr_estatus_asistencia = [
                 0   => 'FALTA',
@@ -200,8 +204,8 @@ return function (Micro $app,$di) {
                             a.asistencia,
                             a.dia as day,
                             a.fecha_cita,
-                            TO_CHAR(a.hora_inicio, 'HH24:MI') AS start,
-                            TO_CHAR(a.hora_termino, 'HH24:MI') AS end,
+                            TO_CHAR(a.hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(a.hora_termino, 'HH24:MI') AS hora_termino,
                             CEIL(EXTRACT(EPOCH FROM (a.hora_termino - a.hora_inicio)) / 60) AS duracion,
                             (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
                             (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) as nombre_profesional,
@@ -210,6 +214,7 @@ return function (Micro $app,$di) {
                             b.primer_apellido,
                             COALESCE(b.segundo_apellido,'') as segundo_apellido,
                             b.nombre,
+                            b.fecha_nacimiento,
                             a.total,
                             a.id_cita_reagendada,
                             a.id_paciente,
@@ -297,7 +302,7 @@ return function (Micro $app,$di) {
                 }
             }
 
-            $phql   .= ' ORDER BY a.fecha_cita DESC,a.hora_inicio DESC,a.hora_termino DESC';
+            $phql   .= ' ORDER BY a.fecha_cita ASC,a.hora_inicio ASC,a.hora_termino ASC,b.nombre,b.primer_apellido';
     
             $result = $db->query($phql,$values);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
@@ -306,11 +311,16 @@ return function (Micro $app,$di) {
             $data = [];
             while ($row = $result->fetch()) {
                 $row['servicios']   = array();
-                $row['estatus']     = $arr_estatus_cita[$row['activa']];
-                $row['fecha_completa']  = $dias_semana[$row['day'] - 1].' '.FuncionesGlobales::formatearFecha($row['fecha_cita']) . ' de '. $row['start']. ' a '.$row['end'];
-                $row['label_pagada']    = $row['pagada'] == 1 ? 'SI' : 'NO';
-                $row['label_dia']       = $dias_semana[$row['day'] - 1];
+                $row['fecha_nacimiento']    = FuncionesGlobales::formatearFecha($row['fecha_nacimiento']);
+                $row['fecha_captura']       = FuncionesGlobales::formatearFecha($row['fecha_captura']);
+                $row['fecha_cita']          = FuncionesGlobales::formatearFecha($row['fecha_cita']);
+                $row['estatus']             = $arr_estatus_cita[$row['activa']];
+                $row['fecha_completa']      = $dias_semana[$row['day'] - 1].' '.FuncionesGlobales::formatearFecha($row['fecha_cita']) . ' de '. $row['hora_inicio']. ' a '.$row['hora_termino'];
+                $row['label_pagada']        = $row['pagada'] == 1 ? 'SI' : 'NO';
+                $row['label_dia']           = $dias_semana[$row['day'] - 1];
                 $row['label_asistencia']        = $arr_estatus_asistencia[$row['asistencia']];
+                $row['pagada']                  = $row['pagada'] == 1 ? 'SI' : 'NO';
+                $row['total']                   = FuncionesGlobales::formatearDecimal($row['total']);
                 $row['info_citas_simultaneas']  = array();
                 $phql   = " SELECT 
                                 a.*,
@@ -333,7 +343,7 @@ return function (Micro $app,$di) {
 
                 $row['codigo_color']    = $row['servicios'][0]['codigo_color'];
 
-                $row['hora_cita']  = $row['start'] . ' - ' . $row['end'];
+                $row['hora_cita']  = $row['hora_inicio'] . ' - ' . $row['hora_termino'];
                 $row['num_servicios'] = count($row['servicios']);
                 if (count($row['servicios']) == 1){
                     $row['num_servicios_costo'] = $row['servicios'][0]['clave'].' / $'.$row['total'];
