@@ -233,8 +233,8 @@ return function (Micro $app,$di) {
                             a.forma_pago,
                             CASE 
                                 WHEN b.fecha_nacimiento IS NOT NULL THEN
-                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text || '.' ||
-                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, b.fecha_nacimiento))::text, 2, '0')
+                                    EXTRACT(YEAR FROM AGE(a.fecha_cita, b.fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(a.fecha_cita, b.fecha_nacimiento))::text, 2, '0')
                                 ELSE NULL
                             END AS edad_actual,
                             a.id_cita_simultanea,
@@ -359,6 +359,92 @@ return function (Micro $app,$di) {
             // Devolver los datos en formato JSON
             $response = new Response();
             $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    $app->get('/reportes/general_ingresos', function () use ($app,$db,$request) {
+        try{
+            //  REPORTE GENERAL DE CITAS EN EL RANGO DE FECHAS
+            //  INCLUYE INFORMACION GENERAL DEL PACIENTES Y DE LA CITA
+            $id_locacion    = $request->getQuery('id_locacion');
+            $rango_fechas   = $request->getQuery('rango_fechas') ?? null;
+
+            if (empty($rango_fechas)){
+                throw new Exception('Rango de fechas vacio');
+            }
+
+            $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+            $arr_estatus_asistencia = [
+                0   => 'FALTA',
+                1   => 'ASISTENCIA',
+                2   => 'RETARDO',
+                3   => 'ACTIVIDAD EN CASA',   
+                null    => 'Sin asignar' 
+            ];
+
+            $arr_estatus_cita   = array(
+                0   => 'CANCELADA',
+                1   => 'ACTIVA',
+                2   => 'PENDIENTE DE AGENDAR',
+            );
+
+            $values = [
+                'fecha_inicio'  => $rango_fechas['fecha_inicio'],
+                'fecha_termino' => $rango_fechas['fecha_termino'],
+            ];
+
+            $filtro = '';
+            if (!empty($id_locacion)) {
+                $filtro .= " AND a.id_locacion = :id_locacion ";
+                $values['id_locacion']  = $id_locacion;
+            }
+            
+            $phql   = " SELECT 
+                            fecha_pago::DATE,
+                            SUM(CASE WHEN a.forma_pago = 'TRANSFERENCIA' THEN a.total ELSE 0 END) AS total_transferencia,
+                            SUM(CASE WHEN a.forma_pago = 'EFECTIVO' THEN a.total ELSE 0 END) AS total_efectivo,
+                            SUM (total) as total_pagos 
+                        FROM tbagenda_citas a WHERE a.pagada = 1 ".$filtro."
+                            AND a.fecha_pago BETWEEN :fecha_inicio AND :fecha_termino AND NOT EXISTS (
+                                    SELECT 1 FROM tbagenda_citas t1 
+                                    WHERE a.id = t1.id_cita_reagendada 
+                                ) GROUP BY fecha_pago::DATE ORDER BY fecha_pago";
+    
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $arr_return = array(
+                'hoja_1'    => [
+                    'total_pagos'           => 0,
+                    'total_efectivo'        => 0,
+                    'total_transferencia'   => 0
+                ],
+                'hoja_2'    => []
+            );
+            while ($row = $result->fetch()) {
+                $row['fecha_pago']  = FuncionesGlobales::formatearFecha($row['fecha_pago']);
+
+                $arr_return['hoja_2'][] = $row;
+
+                //  CALCULO DE TOTALES
+                $arr_return['hoja_1']['total_pagos']    = (($arr_return['hoja_1']['total_pagos'] * 100) + ($row['total_pagos'] * 100) ) / 100;
+                $arr_return['hoja_1']['total_efectivo']         = (($arr_return['hoja_1']['total_efectivo'] * 100) + ($row['total_efectivo'] * 100) ) / 100;
+                $arr_return['hoja_1']['total_transferencia']    = (($arr_return['hoja_1']['total_transferencia'] * 100) + ($row['total_transferencia'] * 100) ) / 100;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
             $response->setStatusCode(200, 'OK');
             return $response;
         }catch (\Exception $e){
