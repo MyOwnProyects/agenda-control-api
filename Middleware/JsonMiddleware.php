@@ -1,40 +1,82 @@
 <?php
-
 declare(strict_types=1);
 
 namespace Middleware;
 
 use Phalcon\Mvc\Micro;
-use Phalcon\Di\DiInterface;
-use Phalcon\Http\Request;
 
 class JsonMiddleware
 {
     public function __invoke(Micro $app)
     {
-        // Obtener el contenedor de dependencias correctamente
         $di = $app->getDI();
         $request = $di->getShared('request');
-
-        $parsedBody = [];
         
-        // Obtener Content-Type desde el header y servidor
-        $contentType = $request->getHeader("CONTENT_TYPE") ?: $request->getServer("CONTENT_TYPE");
-
-
-        // Verificar si la solicitud tiene JSON
-        if (strpos($request->getHeader("CONTENT_TYPE"), "application/json") !== false) {
+        // Obtener Content-Type
+        $contentType = $request->getHeader("CONTENT_TYPE") ?: '';
+        
+        // SOLO procesar JSON si viene como application/json
+        if (strpos($contentType, "application/json") !== false) {
             $rawBody = $request->getRawBody();
+            
+            // Validar que no esté vacío
+            if (empty($rawBody)) {
+                return true;
+            }
+            
             $parsedBody = json_decode($rawBody, true);
-
-            // Si el JSON es inválido, establecerlo como un array vacío
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                $parsedBody = [];
+            
+            // Validar JSON válido
+            if (json_last_error() === JSON_ERROR_NONE && is_array($parsedBody)) {
+                // Sanitizar: solo permitir arrays simples
+                $_POST = $this->sanitizeArray($parsedBody);
+            } else {
+                // JSON inválido - rechazar
+                $response = new \Phalcon\Http\Response();
+                $response->setStatusCode(400, "Bad Request");
+                $response->setJsonContent([
+                    'status' => 'error',
+                    'message' => 'JSON inválido'
+                ]);
+                $response->send();
+                exit;
             }
         }
-
-        $_POST  = $parsedBody;
-
+        // Si es form-urlencoded, PHP ya pobló $_POST de forma segura
+        
         return true;
+    }
+    
+    /**
+     * Sanitizar array recursivamente
+     * Previene objetos anidados maliciosos
+     */
+    private function sanitizeArray($data, $depth = 0)
+    {
+        // Limitar profundidad para prevenir DoS
+        if ($depth > 10) {
+            return [];
+        }
+        
+        if (!is_array($data)) {
+            return [];
+        }
+        
+        $sanitized = [];
+        foreach ($data as $key => $value) {
+            // Solo permitir strings y números como keys
+            if (!is_string($key) && !is_numeric($key)) {
+                continue;
+            }
+            
+            if (is_array($value)) {
+                $sanitized[$key] = $this->sanitizeArray($value, $depth + 1);
+            } else {
+                // Convertir a string de forma segura
+                $sanitized[$key] = is_scalar($value) ? $value : null;
+            }
+        }
+        
+        return $sanitized;
     }
 }
