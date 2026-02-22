@@ -4,10 +4,12 @@
     "type": "project",
     "require": {
         "phalcon/devtools": "^5.0",
-        "php": "^8.2"
+        "php": "^8.2",
+        "firebase/php-jwt": "^7.0"
     },
     "autoload": {
         "psr-4": {
+            "Services\\": "app/Services/",
             "Middleware\\": "Middleware/",
             "Rutas\\": "Rutas/",
 	        "Helpers\\" : "Helpers/"
