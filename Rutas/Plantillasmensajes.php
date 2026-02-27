@@ -38,7 +38,7 @@ return function (Micro $app,$di) {
         
     });
 
-    $app->get('/plantillas_mensajes/generar_mensaje', function () use ($app,$db,$request) {
+    $app->get('/plantillas_mensajes/plantilla_por_cita', function () use ($app,$db,$request) {
         try{
 
             $id_agenda_cita = $request->getQuery('id_agenda_cita') ?? null;
@@ -52,6 +52,7 @@ return function (Micro $app,$di) {
             //  SE GENERA LA INFORMACION DE LA CITA
             $phql   = " SELECT  
                             (e.nombre||' '||e.primer_apellido) as nombre_completo,
+                            e.nombre,
                             (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) as nombre_profesional,
                             a.fecha_cita as fecha_nueva,
                             TO_CHAR(a.hora_inicio, 'HH24:MI') AS hora,
@@ -86,54 +87,62 @@ return function (Micro $app,$di) {
             if (count($arr_info_cita) == 0){
                 throw new Exception('Cita inexistente en el catalogo');
             }
+
+            //  TELEFONO DEL CLIENTE
+            $telefono   = '52'.preg_replace('/\D/', '', $arr_info_cita['celular']);
+            //  BORRAR ANTES DE COMMIT A PRODUCCION
+            $telefono   = '526624767555';
+            
+            $arr_return = array(
+                'celular'       => $arr_info_cita['celular'],
+                'paciente'      => $arr_info_cita['nombre_completo'],
+                'plantillas'    => array(),
+                'fecha_cita'        => FuncionesGlobales::formatearFecha($arr_info_cita['fecha_nueva']),
+                'hora_cita'         => $arr_info_cita['hora'],
+                'dia_cita'          => $dias_semana[$arr_info_cita['dia_cita'] - 1]
+            );
             
             //  BUSQUEDA DE PLANTILLA
-            $phql = "SELECT * FROM ctplantillas_mensajes WHERE 1 = 1 ";
+            $phql = "SELECT * FROM ctplantillas_mensajes WHERE tipo_mensaje IS NULL ";
 
             $flag_plantilla = false;
 
             //  AVISO DE CITA CANCELADA
             if ($arr_info_cita['activa'] == 0){
-                $phql           .= " AND tipo_mensaje = 0 ";
+                $phql           .= " OR tipo_mensaje = 0 ";
                 $flag_plantilla = true;
             }
 
             //  AVISO DE CITA MARCADA COMO PENDIENTE POR REAGENDAR
             if ($arr_info_cita['activa'] == 2){
-                $phql           .= " AND tipo_mensaje = 3 ";
+                $phql           .= " OR tipo_mensaje = 3 ";
                 $flag_plantilla = true;
             }
 
             //  AVISO DE CITA ORDINARIA CREADA
             if ($arr_info_cita['activa'] == 1 && $arr_info_cita['id_cita_programada'] == null && !is_numeric($arr_info_cita['id_cita_reagendada'])){
-                $phql           .= " AND tipo_mensaje = 1 ";
+                $phql           .= " OR tipo_mensaje = 1 ";
                 $flag_plantilla = true;
             }
 
             //  AVISO DE CITA REAGENDADA
             if ($arr_info_cita['activa'] == 1 && is_numeric($arr_info_cita['id_cita_reagendada'])){
-                $phql           .= " AND tipo_mensaje = 2 ";
+                $phql           .= " OR tipo_mensaje = 2 ";
                 $flag_plantilla = true;
-            }
-
-            if (!$flag_plantilla){
-                $response = new Response();
-                $response->setJsonContent(array(
-                    'mensaje'   => array(),
-                    'celular'   => $arr_info_cita['celular'],
-                    'link'      => ''
-                ));
-                $response->setStatusCode(200, 'OK');
-                return $response;
             }
     
             $result = $db->query($phql);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-    
-            $arr_return = array();
+
             while ($row = $result->fetch()) {
+                $plantilla  = array(
+                    'mensaje'   => '',
+                    'link'      => '',
+                    'nombre_plantilla'  => $row['nombre'],
+                );
+
                 $reemplazos = [
-                    '{{PACIENTE}}'        => $arr_info_cita['nombre_completo'],
+                    '{{PACIENTE}}'        => $arr_info_cita['nombre'],
                     '{{PROFESIONAL}}'     => $arr_info_cita['nombre_profesional'],
                     '{{FECHA_CITA}}'      => FuncionesGlobales::formatearFecha($arr_info_cita['fecha_nueva']),
                     '{{HORA}}'            => $arr_info_cita['hora'],
@@ -150,31 +159,27 @@ return function (Micro $app,$di) {
                     '{{DIA_ANTERIOR}}'    => $dias_semana[$arr_info_cita['dia_anterior'] - 1],
                 ];
 
-                $arr_info_cita['celular']   = 6624767555;
-                $arr_return['mensaje'] = str_replace(
+                $plantilla['mensaje']   = str_replace(
                     array_keys($reemplazos),
                     array_values($reemplazos),
                     $row['mensaje']
                 );
 
                 // Normalizar saltos de línea desde BD
-                $mensaje    = $arr_return['mensaje'];
+                $mensaje    = $plantilla['mensaje'];
                 $mensaje    = str_replace('%0A', "\n", $mensaje);
 
                 // Limpieza extra (por si acaso)
                 $mensaje = html_entity_decode($mensaje, ENT_QUOTES, 'UTF-8');
 
-                // Sanitizar teléfono (solo números)
-                $telefono = preg_replace('/\D/', '', $arr_info_cita['celular']);
-
-                $arr_return['celular'] = $telefono;
-
-                // 🔹 Generar link FINAL correcto
-                $arr_return['link'] =
-                    'https://web.whatsapp.com/send?phone=52' .
+                // Generar link FINAL correcto
+                $plantilla['link']  =
+                    'https://web.whatsapp.com/send?phone=' .
                     $telefono .
                     '&text=' .
                     urlencode($mensaje);
+
+                $arr_return['plantillas'][] = $plantilla;
             }
 
             $response = new Response();
