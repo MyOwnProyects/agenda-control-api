@@ -65,7 +65,8 @@ return function (Micro $app,$di) {
                             a.id_cita_programada,
                             e.celular,
                             a.dia as dia_cita,
-                            b.dia as dia_anterior
+                            b.dia as dia_anterior,
+                            a.id_paciente
                         FROM tbagenda_citas a 
                         LEFT JOIN tbagenda_citas b ON a.id_cita_reagendada = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
@@ -96,10 +97,13 @@ return function (Micro $app,$di) {
             $arr_return = array(
                 'celular'       => $arr_info_cita['celular'],
                 'paciente'      => $arr_info_cita['nombre_completo'],
+                'id_paciente'   => $arr_info_cita['id_paciente'],
                 'plantillas'    => array(),
                 'fecha_cita'        => FuncionesGlobales::formatearFecha($arr_info_cita['fecha_nueva']),
                 'hora_cita'         => $arr_info_cita['hora'],
-                'dia_cita'          => $dias_semana[$arr_info_cita['dia_cita'] - 1]
+                'dia_cita'          => $dias_semana[$arr_info_cita['dia_cita'] - 1],
+                'nombre_completo'   => $arr_info_cita['nombre_completo'],
+                'id_agenda_cita'    => $id_agenda_cita
             );
             
             //  BUSQUEDA DE PLANTILLA
@@ -138,7 +142,8 @@ return function (Micro $app,$di) {
                 $plantilla  = array(
                     'mensaje'   => '',
                     'link'      => '',
-                    'nombre_plantilla'  => $row['nombre'],
+                    'nombre_plantilla'      => $row['nombre'],
+                    'id_plantilla_mensaje'  => $row['id']
                 );
 
                 $reemplazos = [
@@ -194,6 +199,76 @@ return function (Micro $app,$di) {
             return $response;
         }
         
+    });
+
+    $app->post('/plantillas_mensajes/plantilla_enviada', function () use ($app, $db, $request) {
+        try {
+
+            //  PARAMETROS
+            $id_agenda_cita         = $request->getPost('id_agenda_cita') ?? null;
+            $id_plantilla_mensaje   = $request->getPost('id_plantilla_mensaje');
+            $id_paciente            = $request->getPost('id_paciente') ?? null;
+            $id_profesional         = $request->getPost('id_profesional') ?? null;
+            $mensaje_generado       = $request->getPost('mensaje_generado');
+            $usuario_solicitud      = $request->getPost('usuario_solicitud');
+
+            if (empty($id_plantilla_mensaje) || !is_numeric($id_plantilla_mensaje)){
+                throw new Exception("Identificador de plantilla vacio");
+            }
+
+            //  SE BUSCA EL ID_PROFESIONAL DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave";
+            $result = $db->query($phql,array('clave' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $id_usuario_solicitud   = null;
+            while ($row = $result->fetch()) {
+                $id_usuario_solicitud   = $row['id'];
+            }
+
+            if (empty($mensaje_generado)){
+                throw new Exception("Mensaje vacio");
+            }
+
+            //  SE CREA EL REGISTRO
+            $phql   = "INSERT INTO tbmensajes_enviados (
+                                    id_plantilla_mensaje,
+                                    id_usuario_solicitud,
+                                    id_agenda_cita,
+                                    id_paciente,
+                                    id_profesional,
+                                    mensaje_generado)
+                        VALUES (:id_plantilla_mensaje,
+                                :id_usuario_solicitud,
+                                :id_agenda_cita,
+                                :id_paciente,
+                                :id_profesional,
+                                :mensaje_generado)";
+
+            $values = array(
+                'id_plantilla_mensaje'  => $id_plantilla_mensaje,
+                'id_usuario_solicitud'  => $id_usuario_solicitud,
+                'id_agenda_cita'        => empty($id_agenda_cita) ? null : $id_agenda_cita,
+                'id_paciente'           => empty($id_paciente) ? null : $id_paciente,
+                'id_profesional'        => empty($id_profesional) ? null : $id_profesional,
+                'mensaje_generado'      => $mensaje_generado
+            );
+
+            $result = $db->execute($phql,$values);
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
     });
     
 };
