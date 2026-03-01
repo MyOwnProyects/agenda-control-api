@@ -113,7 +113,7 @@ return function (Micro $app,$di) {
 
             //  AVISO DE CITA CANCELADA
             if ($arr_info_cita['activa'] == 0){
-                $phql           .= " OR tipo_mensaje = 0 ";
+                $phql           = " SELECT * FROM ctplantillas_mensajes WHERE tipo_mensaje = 0 ";
                 $flag_plantilla = true;
             }
 
