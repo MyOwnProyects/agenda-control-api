@@ -456,4 +456,71 @@ return function (Micro $app,$di) {
         }
         
     });
+
+    $app->get('/reportes/mensajes_enviados', function () use ($app,$db,$request) {
+        try{
+            //  REPORTE GENERAL DE CITAS EN EL RANGO DE FECHAS
+            //  INCLUYE INFORMACION GENERAL DEL PACIENTES Y DE LA CITA
+            $id_locacion    = $request->getQuery('id_locacion');
+            $id_paciente    = $request->getQuery('id_paciente') ?? null;
+            $rango_fechas   = $request->getQuery('rango_fechas') ?? null;
+
+            if (empty($rango_fechas)){
+                throw new Exception('Rango de fechas vacio');
+            }
+
+            $values = [
+                'fecha_inicio'  => $rango_fechas['fecha_inicio'],
+                'fecha_termino' => $rango_fechas['fecha_termino'],
+            ];
+            
+            $phql   = " SELECT 
+                            (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) as nombre_paciente,
+                            b.nombre AS nombre_plantilla,
+                            a.fecha_envio,
+                            a.mensaje_generado,
+                            (e.primer_apellido|| ' ' ||COALESCE(e.segundo_apellido,'')||' '||e.nombre) as nombre_usuario
+                        FROM tbmensajes_enviados a
+                        LEFT JOIN ctplantillas_mensajes b ON a.id_plantilla_mensaje = b.id
+                        LEFT JOIN ctpacientes c ON a.id_paciente = c.id
+                        LEFT JOIN tbagenda_citas d ON a.id_agenda_cita = d.id
+                        LEFT JOIN ctusuarios e  ON a.id_usuario_solicitud = e.id
+                        WHERE fecha_envio BETWEEN :fecha_inicio AND :fecha_termino ";
+    
+            if (!empty($id_locacion)) {
+                $phql           .= " AND d.id_locacion = :id_locacion ";
+                $values['id_locacion']  = $id_locacion;
+            }
+
+            if (is_numeric($id_paciente)){
+                $phql           .= " AND a.id_paciente = :id_paciente ";
+                $values['id_paciente']  = $id_paciente;
+            }
+
+            $phql   .= ' ORDER BY a.fecha_envio DESC ';
+
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $arr_return = array();
+            while ($row = $result->fetch()) {
+                $row['fecha_envio']  = FuncionesGlobales::formatearFecha($row['fecha_envio'],'d/m/Y H:i');
+
+                $arr_return[]   = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
 };
