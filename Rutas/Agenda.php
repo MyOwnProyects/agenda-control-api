@@ -479,7 +479,6 @@ return function (Micro $app,$di) {
 
         }catch (\Exception $e){
             // Devolver los datos en formato JSON
-            $conexion->rollback();
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');

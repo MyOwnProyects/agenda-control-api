@@ -417,7 +417,17 @@ return function (Micro $app,$di) {
                             AND a.fecha_pago BETWEEN :fecha_inicio AND :fecha_termino AND NOT EXISTS (
                                     SELECT 1 FROM tbagenda_citas t1 
                                     WHERE a.id = t1.id_cita_reagendada 
-                                ) GROUP BY fecha_pago::DATE ORDER BY fecha_pago";
+                                ) 
+                            --  EXCLUYE CITAS PAGADAS QUE POR NUEVA GENERACIO NDE CITAS SE HAYAN CANCELADO
+                            AND NOT EXISTS(
+                                SELECT 1 FROM tbagenda_citas t2 
+                                LEFT JOIN ctmotivos_cancelacion_cita t4 ON t2.id_motivo_cancelacion = t4.id
+                                WHERE t2.activa = 0 AND t2.pagada = 1 
+                                AND t2.id_cita_programada IS NOT NULL AND t4.clave = 'NGC' AND NOT EXISTS (
+                                    SELECT 1 FROM tbagenda_citas t3 WHERE t2.id = t3.id_cita_reagendada 
+                                ) AND t2.id = a.id
+                            )
+                            GROUP BY fecha_pago::DATE ORDER BY fecha_pago";
     
             $result = $db->query($phql,$values);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
