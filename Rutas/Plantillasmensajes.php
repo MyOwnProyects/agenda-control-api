@@ -14,14 +14,30 @@ return function (Micro $app,$di) {
     $app->get('/plantillas_mensajes/show', function () use ($app,$db,$request) {
         try{
             
-            $phql = "SELECT * FROM ctplantillas_mensajes ORDER BY tipo_mensaje";
+            $phql   = " SELECT * FROM ctplantillas_mensajes 
+                        WHERE activa = 1 
+                        ORDER BY tipo_mensaje, clave";
     
             $result = $db->query($phql);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
     
-            $arr_return = array();
+            $arr_return = array(
+                'plantillas' => array(),
+                'variables'  => array(
+                    array('label' => 'PACIENTE',      'valor' => '{{PACIENTE}}'),
+                    array('label' => 'PROFESIONAL',   'valor' => '{{PROFESIONAL}}'),
+                    array('label' => 'FECHA CITA',    'valor' => '{{FECHA_CITA}}'),
+                    array('label' => 'HORA',          'valor' => '{{HORA}}'),
+                    array('label' => 'FECHA ANTERIOR','valor' => '{{FECHA_ANTERIOR}}'),
+                    array('label' => 'LOCACION',      'valor' => '{{LOCACION}}'),
+                    array('label' => 'MAPS URL',      'valor' => '{{MAPS_URL}}'),
+                    array('label' => 'DIA CITA',      'valor' => '{{DIA_CITA}}'),
+                    array('label' => 'DIA ANTERIOR',  'valor' => '{{DIA_ANTERIOR}}'),
+                )
+            );
+
             while ($row = $result->fetch()) {
-                $arr_return[]   = $row;
+                $arr_return['plantillas'][] = $row;
             }
 
             $response = new Response();
@@ -107,7 +123,7 @@ return function (Micro $app,$di) {
             );
             
             //  BUSQUEDA DE PLANTILLA
-            $phql = "SELECT * FROM ctplantillas_mensajes WHERE tipo_mensaje IS NULL ";
+            $phql = "SELECT * FROM ctplantillas_mensajes WHERE tipo_mensaje IS NULL AND activa = 1";
 
             $flag_plantilla = false;
 
