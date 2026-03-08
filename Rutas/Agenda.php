@@ -710,9 +710,12 @@ return function (Micro $app,$di) {
                 throw new Exception('Parámetro "Nuevo estatus" vacío');
             }
             
-            // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
-            $phql = "SELECT * FROM tbagenda_citas 
-                    WHERE id = :id_agenda_cita AND asistencia IS NOT NULL AND (asistencia <> :estatus_asistencia_actual OR fecha_cita < now()::DATE)";
+            // VERIFICAR QUE LA CITA YATENGA UN REGISTRO DE ASISTENCIA Y NO ESTE VENCIDA
+            $phql = "   SELECT * FROM tbagenda_citas a
+                        LEFT JOIN ctvariables_sistema b ON b.clave = 'dias_movimientos_citas_vencidas'
+                        WHERE a.id = :id_agenda_cita AND 
+                        a.asistencia IS NOT NULL AND 
+                        (a.asistencia <> :estatus_asistencia_actual OR (a.fecha_cita + (b.valor)::integer * INTERVAL '1 day') < NOW()::DATE)";
     
             $values = array(
                 'id_agenda_cita'    => $id_agenda_cita,
