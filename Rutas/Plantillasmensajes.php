@@ -28,11 +28,11 @@ return function (Micro $app,$di) {
                     array('label' => 'PROFESIONAL',   'valor' => '{{PROFESIONAL}}'),
                     array('label' => 'FECHA CITA',    'valor' => '{{FECHA_CITA}}'),
                     array('label' => 'HORA',          'valor' => '{{HORA}}'),
-                    array('label' => 'FECHA ANTERIOR','valor' => '{{FECHA_ANTERIOR}}'),
+                    array('label' => 'FECHA CITA ANTERIOR','valor' => '{{FECHA_ANTERIOR}}'),
                     array('label' => 'LOCACION',      'valor' => '{{LOCACION}}'),
-                    array('label' => 'MAPS URL',      'valor' => '{{MAPS_URL}}'),
+                    array('label' => 'UBICACION',      'valor' => '{{MAPS_URL}}'),
                     array('label' => 'DIA CITA',      'valor' => '{{DIA_CITA}}'),
-                    array('label' => 'DIA ANTERIOR',  'valor' => '{{DIA_ANTERIOR}}'),
+                    array('label' => 'DIA CITA ANTERIOR',  'valor' => '{{DIA_ANTERIOR}}'),
                 )
             );
 
