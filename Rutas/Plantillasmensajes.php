@@ -165,10 +165,10 @@ return function (Micro $app,$di) {
                 $reemplazos = [
                     '{{PACIENTE}}'        => $arr_info_cita['nombre'],
                     '{{PROFESIONAL}}'     => $arr_info_cita['nombre_profesional'],
-                    '{{FECHA_CITA}}'      => FuncionesGlobales::formatearFecha($arr_info_cita['fecha_nueva']),
+                    '{{FECHA_CITA}}'      => FuncionesGlobales::formatearFechaHumana($arr_info_cita['fecha_nueva']),
                     '{{HORA}}'            => $arr_info_cita['hora'],
                     '{{FECHA_ANTERIOR}}'  => $arr_info_cita['fecha_anterior']
-                        ? FuncionesGlobales::formatearFecha($arr_info_cita['fecha_anterior'])
+                        ? FuncionesGlobales::formatearFechaHumana($arr_info_cita['fecha_anterior'])
                         : '',
                     '{{LOCACION}}'        => $arr_info_cita['locacion'],
                     '{{MAPS_URL}}'        => (
