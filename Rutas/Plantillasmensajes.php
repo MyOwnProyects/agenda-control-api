@@ -115,11 +115,12 @@ return function (Micro $app,$di) {
                 'paciente'      => $arr_info_cita['nombre_completo'],
                 'id_paciente'   => $arr_info_cita['id_paciente'],
                 'plantillas'    => array(),
-                'fecha_cita'        => FuncionesGlobales::formatearFecha($arr_info_cita['fecha_nueva']),
-                'hora_cita'         => $arr_info_cita['hora'],
-                'dia_cita'          => $dias_semana[$arr_info_cita['dia_cita'] - 1],
-                'nombre_completo'   => $arr_info_cita['nombre_completo'],
-                'id_agenda_cita'    => $id_agenda_cita
+                'fecha_cita'            => FuncionesGlobales::formatearFecha($arr_info_cita['fecha_nueva']),
+                'hora_cita'             => $arr_info_cita['hora'],
+                'dia_cita'              => $dias_semana[$arr_info_cita['dia_cita'] - 1],
+                'nombre_completo'       => $arr_info_cita['nombre_completo'],
+                'id_agenda_cita'        => $id_agenda_cita,
+                'link_sin_plantilla'    => 'https://web.whatsapp.com/send?phone=' . $telefono
             );
             
             //  BUSQUEDA DE PLANTILLA
