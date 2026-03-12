@@ -178,7 +178,7 @@ return function (Micro $app,$di) {
                             : ''
                     ),
                     '{{DIA_CITA}}'        => $dias_semana[$arr_info_cita['dia_cita'] - 1],
-                    '{{DIA_ANTERIOR}}'    => $dias_semana[$arr_info_cita['dia_anterior'] - 1],
+                    '{{DIA_ANTERIOR}}'    => $arr_info_cita['dia_anterior'] != null ? $dias_semana[$arr_info_cita['dia_anterior'] - 1] : null,
                 ];
 
                 $plantilla['mensaje']   = str_replace(
