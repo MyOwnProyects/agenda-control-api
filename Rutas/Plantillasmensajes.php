@@ -297,7 +297,7 @@ return function (Micro $app,$di) {
             $id_plantilla   = $request->getPost('id') ?? null;
             $clave          = $request->getPost('clave');
             $nombre         = $request->getPost('nombre');
-            $tipo_mensaje   = $request->getPost('tipo_mensaje');
+            $tipo_mensaje   = $request->getPost('tipo_mensaje') == '-1' || $request->getPost('tipo_mensaje') == '' ? null : $request->getPost('tipo_mensaje');
             $mensaje        = $request->getPost('mensaje');
 
             if (empty($mensaje)){
@@ -310,10 +310,6 @@ return function (Micro $app,$di) {
 
             if (empty($nombre)){
                 throw new Exception("Nombre de plantilla vacio");
-            }
-
-            if (empty($tipo_mensaje)){
-                throw new Exception("Tipo de mensaje de plantilla vacio");
             }
 
             //  SE INHACTIVA LA PLANTILLA
@@ -348,6 +344,45 @@ return function (Micro $app,$di) {
                 'nombre'        => $nombre,
                 'mensaje'       => $mensaje,
                 'tipo_mensaje'  => $tipo_mensaje
+            );
+
+            $result = $conexion->execute($phql,$values);
+
+            $conexion->commit();
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->delete('/plantillas_mensajes/delete_plantilla', function () use ($app, $db, $request) {
+        $conexion   = $this->db;
+        try {
+
+            $conexion->begin();
+
+            //  PARAMETROS
+            $id_plantilla   = $request->getPost('id_plantilla');
+
+            if (empty($id_plantilla) || !is_numeric($id_plantilla)){
+                throw new Exception("Identificador de plantilla vacio");
+            }
+
+            //  SE CREA EL REGISTRO
+            $phql   = "UPDATE ctplantillas_mensajes SET activa = 0 WHERE id = :id_plantilla";
+
+            $values = array(
+                'id_plantilla'  => $id_plantilla,
             );
 
             $result = $conexion->execute($phql,$values);
