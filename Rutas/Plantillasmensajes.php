@@ -286,5 +286,87 @@ return function (Micro $app,$di) {
             return $response;
         }
     });
+
+    $app->post('/plantillas_mensajes/save_plantilla', function () use ($app, $db, $request) {
+        $conexion   = $this->db;
+        try {
+
+            $conexion->begin();
+
+            //  PARAMETROS
+            $id_plantilla   = $request->getPost('id') ?? null;
+            $clave          = $request->getPost('clave');
+            $nombre         = $request->getPost('nombre');
+            $tipo_mensaje   = $request->getPost('tipo_mensaje');
+            $mensaje        = $request->getPost('mensaje');
+
+            if (empty($mensaje)){
+                throw new Exception("Mensaje de plantilla vacio");
+            }
+            
+            if (empty($clave)){
+                throw new Exception("Clave de plantilla vacio");
+            }
+
+            if (empty($nombre)){
+                throw new Exception("Nombre de plantilla vacio");
+            }
+
+            if (empty($tipo_mensaje)){
+                throw new Exception("Tipo de mensaje de plantilla vacio");
+            }
+
+            //  SE INHACTIVA LA PLANTILLA
+            if (!empty($id_plantilla) && is_numeric($id_plantilla)){
+                $phql   = "UPDATE ctplantillas_mensajes SEt activa = 0 WHERE id = :id";
+                $result = $conexion->execute($phql,array('id' => $id_plantilla));
+            }
+
+            //  SE VERIFICA QUE LA CLAVE NO ESTE REPETIDA
+            $phql   = "SELECT * FROM ctplantillas_mensajes WHERE (clave = :clave OR nombre = :nombre) AND activa = 1";
+            $result = $db->query($phql,array('clave' => $clave,'nombre' => $nombre));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            while ($row = $result->fetch()) {
+                throw new Exception('La clave o nombre ingresada ya fue utilizada en el catalogo');
+            }
+
+            //  SE CREA EL REGISTRO
+            $phql   = "INSERT INTO ctplantillas_mensajes (
+                                    clave,
+                                    nombre,
+                                    mensaje,
+                                    tipo_mensaje)
+                        VALUES (:clave,
+                                :nombre,
+                                :mensaje,
+                                :tipo_mensaje)";
+
+            $values = array(
+                'clave'         => $clave,
+                'nombre'        => $nombre,
+                'mensaje'       => $mensaje,
+                'tipo_mensaje'  => $tipo_mensaje
+            );
+
+            $result = $conexion->execute($phql,$values);
+
+            $conexion->commit();
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array('MSG' => 'OK'));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+            
+        } catch (\Exception $e) {
+            $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
     
 };
