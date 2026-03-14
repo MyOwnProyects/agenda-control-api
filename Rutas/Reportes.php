@@ -489,13 +489,14 @@ return function (Micro $app,$di) {
                             b.nombre AS nombre_plantilla,
                             a.fecha_envio,
                             a.mensaje_generado,
-                            (e.primer_apellido|| ' ' ||COALESCE(e.segundo_apellido,'')||' '||e.nombre) as nombre_usuario
+                            (e.primer_apellido|| ' ' ||COALESCE(e.segundo_apellido,'')||' '||e.nombre) as nombre_usuario,
+                            a.celular
                         FROM tbmensajes_enviados a
                         LEFT JOIN ctplantillas_mensajes b ON a.id_plantilla_mensaje = b.id
                         LEFT JOIN ctpacientes c ON a.id_paciente = c.id
                         LEFT JOIN tbagenda_citas d ON a.id_agenda_cita = d.id
                         LEFT JOIN ctusuarios e  ON a.id_usuario_solicitud = e.id
-                        WHERE fecha_envio BETWEEN :fecha_inicio AND :fecha_termino ";
+                        WHERE fecha_envio::DATE BETWEEN :fecha_inicio AND :fecha_termino ";
     
             if (!empty($id_locacion)) {
                 $phql           .= " AND d.id_locacion = :id_locacion ";

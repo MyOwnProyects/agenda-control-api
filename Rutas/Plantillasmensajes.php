@@ -107,8 +107,6 @@ return function (Micro $app,$di) {
 
             //  TELEFONO DEL CLIENTE
             $telefono   = '52'.preg_replace('/\D/', '', $arr_info_cita['celular']);
-            //  BORRAR ANTES DE COMMIT A PRODUCCION
-            $telefono   = '526624767555';
             
             $arr_return = array(
                 'celular'       => $arr_info_cita['celular'],
@@ -122,6 +120,19 @@ return function (Micro $app,$di) {
                 'id_agenda_cita'        => $id_agenda_cita,
                 'link_sin_plantilla'    => 'https://web.whatsapp.com/send?phone=' . $telefono
             );
+
+            //  PLANTILLAS ENVIADAS A ESTA CITA
+            $phql   = "SELECT * FROM tbmensajes_enviados WHERE id_agenda_cita = :id_agenda_cita ";
+            $result = $db->query($phql,array(
+                'id_agenda_cita'    => $id_agenda_cita
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            $arr_plantillas_enviados    = array();
+            while ($row = $result->fetch()) {
+                //  $mapsUrl = 'https://maps.google.com/?q=' . $latitud . ',' . $longitud;
+                $arr_plantillas_enviados[]  = $row['id_plantilla_mensaje'];
+            }
             
             //  BUSQUEDA DE PLANTILLA
             $phql = "   SELECT * FROM ctplantillas_mensajes 
@@ -163,7 +174,8 @@ return function (Micro $app,$di) {
                     'mensaje'   => '',
                     'link'      => '',
                     'nombre_plantilla'      => $row['nombre'],
-                    'id_plantilla_mensaje'  => $row['id']
+                    'id_plantilla_mensaje'  => $row['id'],
+                    'plantilla_usada'       => in_array($row['id'],$arr_plantillas_enviados) ? 1 : 0
                 );
 
                 $reemplazos = [
@@ -230,6 +242,7 @@ return function (Micro $app,$di) {
             $id_paciente            = $request->getPost('id_paciente') ?? null;
             $id_profesional         = $request->getPost('id_profesional') ?? null;
             $mensaje_generado       = $request->getPost('mensaje_generado');
+            $celular                = $request->getPost('celular');
             $usuario_solicitud      = $request->getPost('usuario_solicitud');
 
             if (empty($id_plantilla_mensaje) || !is_numeric($id_plantilla_mensaje)){
@@ -258,12 +271,14 @@ return function (Micro $app,$di) {
                                     id_agenda_cita,
                                     id_paciente,
                                     id_profesional,
+                                    celular,
                                     mensaje_generado)
                         VALUES (:id_plantilla_mensaje,
                                 :id_usuario_solicitud,
                                 :id_agenda_cita,
                                 :id_paciente,
                                 :id_profesional,
+                                :celular,
                                 :mensaje_generado)";
 
             $values = array(
@@ -272,6 +287,7 @@ return function (Micro $app,$di) {
                 'id_agenda_cita'        => empty($id_agenda_cita) ? null : $id_agenda_cita,
                 'id_paciente'           => empty($id_paciente) ? null : $id_paciente,
                 'id_profesional'        => empty($id_profesional) ? null : $id_profesional,
+                'celular'               => $celular,
                 'mensaje_generado'      => $mensaje_generado
             );
 
