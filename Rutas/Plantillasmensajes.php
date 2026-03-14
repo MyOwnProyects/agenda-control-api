@@ -124,7 +124,8 @@ return function (Micro $app,$di) {
             );
             
             //  BUSQUEDA DE PLANTILLA
-            $phql = "SELECT * FROM ctplantillas_mensajes WHERE tipo_mensaje IS NULL AND activa = 1";
+            $phql = "   SELECT * FROM ctplantillas_mensajes 
+                        WHERE activa = 1 AND ( tipo_mensaje IS NULL ";
 
             $flag_plantilla = false;
 
@@ -151,6 +152,8 @@ return function (Micro $app,$di) {
                 $phql           .= " OR tipo_mensaje = 2 ";
                 $flag_plantilla = true;
             }
+
+            $phql   .= ' ) ';
     
             $result = $db->query($phql);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
