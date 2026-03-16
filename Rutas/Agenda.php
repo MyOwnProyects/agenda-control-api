@@ -146,6 +146,7 @@ return function (Micro $app,$di) {
             $from_digital_record    = $request->getQuery('from_digital_record') ?? null;
             $citas_fuera_horario    = $request->getQuery('citas_fuera_horario') ?? null;
             $cita_simultanea        = $request->getQuery('cita_simultanea') ?? null;
+            $agenda_movil           = $request->getQuery('agenda_movil') ?? null;
 
             $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
             $arr_estatus_asistencia = [
@@ -375,7 +376,13 @@ return function (Micro $app,$di) {
                     
                 }
                 $row['edad_actual'] = empty($row['edad_actual']) ? 'S/E' : $row['edad_actual'];
-                $row['nombre_completo'] = $row['nombre_completo'].' ('.$row['edad_actual'].')';
+
+                if (!$agenda_movil){
+                    $row['nombre_completo'] = $row['nombre_completo'].' ('.$row['edad_actual'].')';
+                } else {
+                    $row['nombre_completo'] = $row['primer_apellido'].' '.$row['nombre'].' ('.$row['edad_actual'].')';
+                }
+                
                 $data[] = $row;
             }
     
