@@ -167,7 +167,7 @@ return function (Micro $app,$di) {
                         )";
             $values['usuario_solicitud']    = $usuario_solicitud;
 
-            $phql   .= ' ORDER BY a.clave,a.nombre ';
+            $phql   .= ' ORDER BY a.primer_apellido,a.nombre ';
 
             if ($request->hasQuery('offset')){
                 $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
