@@ -36,6 +36,11 @@ return function (Micro $app,$di) {
                 2   => 'PENDIENTE DE AGENDAR',
             );
 
+            $arr_return = array(
+                'citas'         => [],
+                'saldo_favor'   => 100
+            );
+
             // Definir el query SQL
             $phql   = " SELECT  
                             a.id as id_agenda_cita,
@@ -95,7 +100,7 @@ return function (Micro $app,$di) {
                             AND t1.activa = 1
                             GROUP BY t1.id_cita_simultanea
                         ) j ON j.id_cita_simultanea = a.id
-                        WHERE a.id_paciente = :id_paciente AND a.pagada = 0 AND a.activa = 1
+                        WHERE a.id_paciente = :id_paciente AND a.pagada = 0 AND a.activa <> 0
                         ORDER BY a.fecha_cita,a.hora_inicio,a.hora_termino";
             
     
@@ -115,38 +120,34 @@ return function (Micro $app,$di) {
                 $row['label_dia']       = $dias_semana[$row['day'] - 1];
                 $row['label_asistencia']        = $arr_estatus_asistencia[$row['asistencia']];
                 $row['info_citas_simultaneas']  = array();
-                if (!empty($get_servicios)){
-                    $phql   = " SELECT 
-                                    a.*,
-                                    b.clave,
-                                    b.nombre as nombre_servicio,
-                                    b.codigo_color
-                                FROM tbagenda_citas_servicios a 
-                                LEFT JOIN ctservicios b ON a.id_servicio = b.id
-                                WHERE a.id_agenda_cita = :id_agenda_cita 
-                                ORDER BY b.costo DESC";
-                    $result_servicios = $db->query($phql,array('id_agenda_cita' => $row['id_agenda_cita']));
-                    $result_servicios->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
-                    if ($result_servicios){
-                        while($data_servicios = $result_servicios->fetch()){
-                            $data_servicios['duracion'] = $data_servicios['duracion'] / 60;
-                            $row['servicios'][]         = $data_servicios;
-                        }
+                $phql   = " SELECT 
+                                a.*,
+                                b.clave,
+                                b.nombre as nombre_servicio,
+                                b.codigo_color
+                            FROM tbagenda_citas_servicios a 
+                            LEFT JOIN ctservicios b ON a.id_servicio = b.id
+                            WHERE a.id_agenda_cita = :id_agenda_cita 
+                            ORDER BY b.costo DESC";
+                $result_servicios = $db->query($phql,array('id_agenda_cita' => $row['id_agenda_cita']));
+                $result_servicios->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result_servicios){
+                    while($data_servicios = $result_servicios->fetch()){
+                        $data_servicios['duracion'] = $data_servicios['duracion'] / 60;
+                        $row['servicios'][]         = $data_servicios;
                     }
                 }
 
                 $row['codigo_color']    = $row['servicios'][0]['codigo_color'];
 
-                if ($from_catalog){
-                    $row['hora_cita']  = $row['start'] . ' - ' . $row['end'];
-                    $row['num_servicios'] = count($row['servicios']);
-                    if (count($row['servicios']) == 1){
-                        $row['num_servicios_costo'] = $row['servicios'][0]['clave'].' / $'.$row['total'];
-                    } else {
-                        $row['num_servicios_costo'] = count($row['servicios']).' / $'.$row['total'];
-                    }
-                    
+                $row['hora_cita']  = $row['start'] . ' - ' . $row['end'];
+                $row['num_servicios'] = count($row['servicios']);
+                if (count($row['servicios']) == 1){
+                    $row['num_servicios_costo'] = $row['servicios'][0]['clave'].' / $'.$row['total'];
+                } else {
+                    $row['num_servicios_costo'] = count($row['servicios']).' / $'.$row['total'];
                 }
                 
                 $row['edad_actual'] = empty($row['edad_actual']) ? 'S/E' : $row['edad_actual'];
@@ -159,10 +160,12 @@ return function (Micro $app,$di) {
                 
                 $data[] = $row;
             }
+
+            $arr_return['citas']    = $data;
     
             // Devolver los datos en formato JSON
             $response = new Response();
-            $response->setJsonContent($data);
+            $response->setJsonContent($arr_return);
             $response->setStatusCode(200, 'OK');
             return $response;
         }catch (\Exception $e){
