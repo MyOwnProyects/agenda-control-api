@@ -38,7 +38,7 @@ return function (Micro $app,$di) {
 
             $arr_return = array(
                 'citas'         => [],
-                'saldo_favor'   => 100
+                'saldo_favor'   => 0
             );
 
             // Definir el query SQL
@@ -83,7 +83,8 @@ return function (Micro $app,$di) {
                             a.id_motivo_cita_fuera_horario,
                             i.nombre as nombre_motivo_cita_fuera_horario,
                             a.observaciones_motivo_cita_fuera_horario,
-                            COALESCE(j.num_citas_simultaneas,0) as num_citas_simultaneas
+                            COALESCE(j.num_citas_simultaneas,0) as num_citas_simultaneas,
+                            fn_saldo_cita(a.id) as saldo_cita
                         FROM tbagenda_citas a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctprofesionales c ON a.id_profesional = c.id
@@ -179,43 +180,34 @@ return function (Micro $app,$di) {
     });
 
     // Ruta principal para obtener todos los usuarios
-    $app->get('/ctbitacora_acciones/show', function () use ($app,$db,$request) {
+    $app->get('/caja/get_fecha_hora', function () use ($app,$db,$request) {
         try{
             $controlador            = $request->getQuery('controlador');
         
             // Definir el query SQL
-            $phql   = "SELECT controlador,accion FROM ctbitacora_acciones WHERE 1 = 1 ";
-            $values = array();
-
-            $phql   .= " ORDER BY controlador,accion DESC";
-    
-            // Ejecutar el query y obtener el resultado
-            $result = $db->query($phql,$values);
+            $phql = "SELECT CURRENT_DATE as fecha, TO_CHAR(NOW(), 'HH24:MI:SS') AS hora_actual";
+            $result = $db->query($phql);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-    
+
             // Recorrer los resultados
-            $data = array(
-                'lista_controladores'   => array(),
-                'todos_registros'       => array()
+            $arr_return = array(
+                'fecha_hora'    => ''
             );
             while ($row = $result->fetch()) {
-                if (!in_array($row['controlador'],$data['lista_controladores'])){
-                    $data['lista_controladores'][]  = $row['controlador'];
-                }
-
-                $data['todos_registros'][$row['controlador']][] = $row;
+                $row['fecha']               = FuncionesGlobales::formatearFecha($row['fecha']);
+                $arr_return['fecha_hora']   = $row['fecha'].' '.$row['hora_actual'];
             }
     
             // Devolver los datos en formato JSON
             $response = new Response();
-            $response->setJsonContent($data);
+            $response->setJsonContent($arr_return);
             $response->setStatusCode(200, 'OK');
             return $response;
         }catch (\Exception $e){
             // Devolver los datos en formato JSON
             $response = new Response();
             $response->setJsonContent($e->getMessage());
-            $response->setStatusCode(400, 'Created');
+            $response->setStatusCode(404, 'Not found');
             return $response;
         }
         
