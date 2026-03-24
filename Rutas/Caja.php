@@ -212,4 +212,38 @@ return function (Micro $app,$di) {
         }
         
     });
+
+    $app->post('/caja/save_pago', function () use ($app,$db,$request) {
+        $conexion   = $this->db;
+        try{
+            $conexion->begin();
+
+            $obj_citas_saldos    = $request->getPost('obj_citas_saldos');
+            $obj_info_pago       = $request->getPost('obj_info_pago');
+            $info_ticket         = $request->getPost('info_ticket');
+            $id_paciente         = $request->getPost('id_paciente');
+
+            //  SE CREA EL REGISTRO DEL TICKET, DE AQUI SE OBTIENE EL FOLIO
+            
+
+
+
+            //$conexion->commit();
+            $conexion->rollback();
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            $conexion->rollback();
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(404, 'Not found');
+            return $response;
+        }
+        
+    });
 };
