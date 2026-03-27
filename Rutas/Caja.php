@@ -151,13 +151,8 @@ return function (Micro $app,$di) {
                     $row['num_servicios_costo'] = count($row['servicios']).' / $'.$row['total'];
                 }
                 
-                $row['edad_actual'] = empty($row['edad_actual']) ? 'S/E' : $row['edad_actual'];
-
-                if (!$agenda_movil){
-                    $row['nombre_completo'] = $row['nombre_completo'].' ('.$row['edad_actual'].')';
-                } else {
-                    $row['nombre_completo'] = $row['primer_apellido'].' '.$row['nombre'].' ('.$row['edad_actual'].')';
-                }
+                $row['edad_actual']     = empty($row['edad_actual']) ? 'S/E' : $row['edad_actual'];
+                $row['nombre_completo'] = $row['nombre_completo'].' ('.$row['edad_actual'].')';
                 
                 $data[] = $row;
             }
