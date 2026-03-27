@@ -222,11 +222,246 @@ return function (Micro $app,$di) {
             $obj_info_pago       = $request->getPost('obj_info_pago');
             $info_ticket         = $request->getPost('info_ticket');
             $id_paciente         = $request->getPost('id_paciente');
+            $usuario_solicitud      = $request->getPost('usuario_solicitud');
 
-            //  SE CREA EL REGISTRO DEL TICKET, DE AQUI SE OBTIENE EL FOLIO
+            //  ORDEN EN QUE SE GENERARAN LOS ABONOS SEGUN EL METODO DE PAGO
+            $arr_orden_metodo_pago  = array(
+                [
+                    'label_table'   => 'EFECTIVO',
+                    'index'         => 'pago_efectivo'
+                ],
+                [
+                    'label_table'   => 'TRANSFERENCIA',
+                    'index'         => 'pago_transferencia'
+                ],
+                [
+                    'label_table'   => 'TARJETA',
+                    'index'         => 'pago_tarjeta'
+                ]
+            );
+
+            if (empty($obj_citas_saldos) || count($obj_citas_saldos) == 0){
+                throw new Exception('Información de citas a pagar vacias');
+            }
+
+            if (empty($obj_info_pago) || count($obj_info_pago) == 0){
+                throw new Exception('Información de pagos vacias');
+            }
+
+            if (empty($info_ticket)){
+                throw new Exception('Información de Ticket vacios');
+            }
+
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
+            }
+
+            //  SE VERIFICA SI EL SALDO DE LAS CITAS A PAGAR ES EL MISMO QUE VISUALIZABA EL USUARIO
+            foreach($obj_citas_saldos as $saldo){
+                $phql   = " SELECT fn_saldo_cita(a.id) as saldo_cita 
+                            FROM tbagenda_citas a WHERE a.id = :id_agenda_cita AND activa <> 0";
+                $flag_exist = false;
+
+                $result = $db->query($phql, array(
+                    'id_agenda_cita'    => $saldo['id_agenda_cita']
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result){
+                    while($data = $result->fetch()){
+                        $flag_exist = true;
+                        if ($data['saldo_cita'] != $saldo['saldo_cita']){
+                            throw new Exception('Una de la citas cuenta con un saldo diferente al mostrado en pantalla, refresca la vista para actualizar la información');
+                        }
+                    }
+                }
+
+                if (!$flag_exist){
+                    throw new Exception('Una de las citas ya no se encuentra disponible para pagar, refresca la vista para actualizar la información');
+                }
+            }
+
+            //  @TODO FUNCION SALDO A FAVOR SE VALIDA QUE EL SALDO A FAVOR DEL USUARIO SEA EL MISMO
+            if ($obj_info_pago['saldo_favor'] != $obj_info_pago['saldo_favor']){
+                throw new Exception("El saldo a favor del paciente a cambiado, refresca la vista para actualizar la información");
+            }
+
+            //  SE OBTIENE EL FOLIO DEL TICKET
+            $phql   = "SELECT * FROM fn_folio_ticket();";
+            $result = $db->query($phql);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while($data = $result->fetch()){
+                $folio_generado = $data['fn_folio_ticket'];
+            }
+
+            //  SE GENERA EL TICKET
+            $phql   = " INSERT INTO tbtickets_pagos (folio,id_paciente,detalle,id_usuario_captura)
+                        VALUES (:folio,:id_paciente,:detalle,:id_usuario_captura)";
+
+            $values = array(
+                'folio'         => $folio_generado,
+                'id_paciente'   => $id_paciente,
+                'detalle'       => json_encode($info_ticket),
+                'id_usuario_captura'    => $id_usuario_solicitud
+            );
+
+            $result = $conexion->query($phql,$values);
+
+            //  @TODO APLICAR SALDO A FAVOR PRIMERO
             
+            $id_abonos_generados    = array();
+            foreach($arr_orden_metodo_pago as $index_metodo_pago => $metodo_pago){
 
+                //  EN CASO DE QUE EL METODO DE PAGO NO VENGA EN EL ARRAY
+                if (!isset($obj_info_pago[$metodo_pago['index']])){
+                    continue;
+                }
 
+                $id_abono   = null;
+                $monto      = $obj_info_pago[$metodo_pago['index']];
+
+                //  SI EL MONTO ES 0 NO SE CREA EL ABONO
+                if ($monto == 0){
+                    continue;
+                }
+
+                //  CONVERTIR EL MONTO A NUMERICO
+                $monto  = $monto * 1;
+
+                //  SE CREA EL ABONO
+                $phql   = " INSERT INTO tbabonos (id_paciente,monto,tipo_abono,metodo_pago,id_usuario_captura)
+                        VALUES (:id_paciente,:monto,:tipo_abono,:metodo_pago,:id_usuario_captura) RETURNING *";
+                
+                $values = array(
+                    'id_paciente'   => $id_paciente,
+                    'monto'         => $monto,
+                    'tipo_abono'    => 1,
+                    'metodo_pago'   => $metodo_pago['label_table'],
+                    'id_usuario_captura'    => $id_usuario_solicitud
+                );
+
+                $result = $conexion->query($phql, $values);
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result){
+                    while($data = $result->fetch()){
+                        $id_abono   = $data['id'];
+                    }
+                }
+
+                $id_abonos_generados[$id_abono] = $monto;
+
+                //  SE RECORREN TODAS LAS CITAS A PAGAR
+                foreach($obj_citas_saldos as $index => $cita_pagar){
+                    //  CONVERTIMOS EL SALDO A NUMERICO
+                    $cita_pagar['saldo_cita']   = $cita_pagar['saldo_cita'] * 1;
+
+                    //  SE VERIFICA SI CON EL ABONO LA CITA QUEDA LIQUIDADA
+                    $liquidar_cargo = false;
+                    $monto_movto    = 0;
+                    if ($monto >= $cita_pagar['saldo_cita']){
+                        $liquidar_cargo = true;
+
+                        $monto          = (($monto * 100) - ($cita_pagar['saldo_cita'] * 100)) / 100;
+                        $monto_movto    = $cita_pagar['saldo_cita'];
+                    } else {
+                        //  COMO NO ALCANZA A LIQUIDAR SE CREARA EL MOVTO CON LA CANTIDAD
+                        //  DEL ABONO Y SE REALIZA LA RESTA DEL SALDO DE LA CITA
+                        $obj_citas_saldos[$index]['saldo_cita'] = (($cita_pagar['saldo_cita'] * 100) - ($monto * 100)) / 100;
+                        $monto_movto                            = $monto;
+                        $monto                                  = 0;
+                    }
+
+                    $phql   = "INSERT INTO tbabonos_movimientos (
+                                            id_abono,
+                                            id_agenda_cita,
+                                            monto,
+                                            id_usuario_captura
+                                            )
+                                        VALUES (
+                                            :id_abono,
+                                            :id_agenda_cita,
+                                            :monto,
+                                            :id_usuario_captura
+                                        )";
+                    
+                    $values = array(
+                        'id_abono'              => $id_abono,
+                        'id_agenda_cita'        => $cita_pagar['id_agenda_cita'],
+                        'monto'                 => $monto_movto,
+                        'id_usuario_captura'    => $id_usuario_solicitud
+                    );
+
+                    $result = $conexion->execute($phql,$values);
+
+                    //  SI SE LIQUIDO LA CITA ESTA SE SACA DEL ARRAY Y SE MARCA COMO PAGADA
+                    if ($liquidar_cargo){
+                        $phql   = "UPDATE tbagenda_citas SET pagada = 1, fecha_pago = NOW() WHERE id = :id_agenda_cita";
+                        $result = $conexion->execute($phql,array('id_agenda_cita' => $cita_pagar['id_agenda_cita']));
+
+                        unset($obj_citas_saldos[$index]);
+                    }
+
+                    //  SI EL MONTO LLEGA A 0 SE TENIENE EL RECORRIDO
+                    if ($monto == 0){
+                        break;
+                    }
+                }
+
+                //  ARRAY DE ID ABONOS GENERADOS Y CANTIDAD RESTANTE POSTERIOR A SER APLICADO
+                //  ESTO SOLO SI EL MONTO TIENE DINERO, SIRVE PARA SABER SI QUEDO ANTICIPADO
+                if ($monto == 0){
+                    unset($id_abonos_generados[$id_abono]);
+                } else {
+                    $id_abonos_generados[$id_abono] = $monto;
+                }
+                
+            }
+
+            //  SI EL ARRAY DE ABONOS GENERADOS TIENE DATOS QUIERE DECIR QUE HAY SALDOS A FAVOR
+            $suma_monto_favor   = 0;
+            if (count($id_abonos_generados) > 0){
+                foreach($id_abonos_generados as $id_abono => $monto){
+                    $phql   = "INSERT INTO tbsaldo_favor (id_paciente,monto) VALUES (:id_paciente,:monto) RETURNING *";
+
+                    $result = $conexion->query($phql, array(
+                        'id_paciente'   => $id_paciente,
+                        'monto'         => $monto
+                    ));
+                    $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    $id_saldo_favor = null;
+                    if ($result){
+                        while($data = $result->fetch()){
+                            $id_saldo_favor = $data['id'];
+                        }
+                    }
+
+                    //  SE INGRESA EL SALDO A FAVOR AL ABONO
+                    $phql   = "UPDATE tbabonos SET id_saldo_favor = :id_saldo_favor WHERE id = :id_abono";
+                    $result = $conexion->execute($phql,array(
+                        'id_saldo_favor'    => $id_saldo_favor,
+                        'id_abono'          => $id_abono
+                    ));
+
+                    $suma_monto_favor   = (($suma_monto_favor * 100) + ($monto * 100)) / 100;
+                }
+            }
+
+            //  SI EL SALDO A FAVOR ES DIFERENTE AL EXCEDENTE DEL OBJETO
+            //  SIGNIFICA QUE DURANTE LA CAPTURA DE PAGOS EL SALDO A FAVOR O UNA CANTIDAD
+            //  CAMBIO, POR CUAL ARROJARA ERROR
+            if ($suma_monto_favor != $obj_info_pago['excedente']){
+                throw new Exception("El saldo a favor del paciente a cambiar, refresca la vista para actualizar la información");
+            }
 
             //$conexion->commit();
             $conexion->rollback();

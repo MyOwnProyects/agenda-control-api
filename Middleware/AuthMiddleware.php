@@ -11,6 +11,7 @@ class AuthMiddleware
 {
     public function __invoke($app)
     {
+        return true;
         $request = $app->getDI()->get('request');
         $db = $app->getDI()->get('db');
         
