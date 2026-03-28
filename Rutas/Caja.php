@@ -41,6 +41,19 @@ return function (Micro $app,$di) {
                 'saldo_favor'   => 0
             );
 
+            //  SE BUSCA EL SALDO A FAVOR DEL PACIENTE
+            $phql   = "SELECT * FROM fn_saldo_favor_paciente(:id_paciente);";
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result){
+                while($data = $result->fetch()){
+                    $arr_return['saldo_favor']  = $data['fn_saldo_favor_paciente'];
+                }
+            }
+
             // Definir el query SQL
             $phql   = " SELECT  
                             a.id as id_agenda_cita,
@@ -283,8 +296,22 @@ return function (Micro $app,$di) {
                 }
             }
 
+            //  SE BUSCA EL SALDO A FAVOR DEL PACIENTE
+            $saldo_favor_calculado  = 0;
+            $phql   = "SELECT * FROM fn_saldo_favor_paciente(:id_paciente);";
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result){
+                while($data = $result->fetch()){
+                    $saldo_favor_calculado  = $data['fn_saldo_favor_paciente'];
+                }
+            }
+
             //  @TODO FUNCION SALDO A FAVOR SE VALIDA QUE EL SALDO A FAVOR DEL USUARIO SEA EL MISMO
-            if ($obj_info_pago['saldo_favor'] != $obj_info_pago['saldo_favor']){
+            if ($saldo_favor_calculado != $obj_info_pago['saldo_favor']){
                 throw new Exception("El saldo a favor del paciente a cambiado, refresca la vista para actualizar la información");
             }
 
@@ -310,7 +337,89 @@ return function (Micro $app,$di) {
 
             $result = $conexion->query($phql,$values);
 
-            //  @TODO APLICAR SALDO A FAVOR PRIMERO
+            //  APLICAR SALDO A FAVOR PRIMERO
+            if ($saldo_favor_calculado > 0){
+                $phql   = "SELECT a.id AS id_abono, a.monto - COALESCE(b.monto_usado, 0) AS monto_disponible
+                            FROM tbabonos a
+                            LEFT JOIN LATERAL (
+                                SELECT SUM(t1.monto) AS monto_usado 
+                                FROM tbabonos_movimientos t1
+                                WHERE a.id = t1.id_abono 
+                                AND t1.estatus = 1
+                            ) b ON TRUE
+                            WHERE a.id_paciente = :id_paciente
+                            AND a.estatus = 1
+                            AND (a.monto - COALESCE(b.monto_usado, 0)) > 0
+                            ;";
+
+                $result_saldo_favor = $db->query($phql,array(
+                    'id_paciente'   => $id_paciente
+                ));
+                $result_saldo_favor->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result_saldo_favor){
+                    while($data = $result_saldo_favor->fetch()){
+                        //  SE RECORREN TODAS LAS CITAS A PAGAR
+                        $id_abono   = $data['id_abono'];
+                        $monto      = $data['monto_disponible'];
+                        foreach($obj_citas_saldos as $index => $cita_pagar){
+                            //  CONVERTIMOS EL SALDO A NUMERICO
+                            $cita_pagar['saldo_cita']   = $cita_pagar['saldo_cita'] * 1;
+
+                            //  SE VERIFICA SI CON EL ABONO LA CITA QUEDA LIQUIDADA
+                            $liquidar_cargo = false;
+                            $monto_movto    = 0;
+                            if ($monto >= $cita_pagar['saldo_cita']){
+                                $liquidar_cargo = true;
+
+                                $monto          = (($monto * 100) - ($cita_pagar['saldo_cita'] * 100)) / 100;
+                                $monto_movto    = $cita_pagar['saldo_cita'];
+                            } else {
+                                //  COMO NO ALCANZA A LIQUIDAR SE CREARA EL MOVTO CON LA CANTIDAD
+                                //  DEL ABONO Y SE REALIZA LA RESTA DEL SALDO DE LA CITA
+                                $obj_citas_saldos[$index]['saldo_cita'] = (($cita_pagar['saldo_cita'] * 100) - ($monto * 100)) / 100;
+                                $monto_movto                            = $monto;
+                                $monto                                  = 0;
+                            }
+
+                            $phql   = "INSERT INTO tbabonos_movimientos (
+                                                    id_abono,
+                                                    id_agenda_cita,
+                                                    monto,
+                                                    id_usuario_captura
+                                                    )
+                                                VALUES (
+                                                    :id_abono,
+                                                    :id_agenda_cita,
+                                                    :monto,
+                                                    :id_usuario_captura
+                                                )";
+                            
+                            $values = array(
+                                'id_abono'              => $id_abono,
+                                'id_agenda_cita'        => $cita_pagar['id_agenda_cita'],
+                                'monto'                 => $monto_movto,
+                                'id_usuario_captura'    => $id_usuario_solicitud
+                            );
+
+                            $result = $conexion->execute($phql,$values);
+
+                            //  SI SE LIQUIDO LA CITA ESTA SE SACA DEL ARRAY Y SE MARCA COMO PAGADA
+                            if ($liquidar_cargo){
+                                $phql   = "UPDATE tbagenda_citas SET pagada = 1, fecha_pago = NOW() WHERE id = :id_agenda_cita";
+                                $result = $conexion->execute($phql,array('id_agenda_cita' => $cita_pagar['id_agenda_cita']));
+
+                                unset($obj_citas_saldos[$index]);
+                            }
+
+                            //  SI EL MONTO LLEGA A 0 SE TENIENE EL RECORRIDO
+                            if ($monto == 0){
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             
             $id_abonos_generados    = array();
             foreach($arr_orden_metodo_pago as $index_metodo_pago => $metodo_pago){
@@ -458,8 +567,8 @@ return function (Micro $app,$di) {
                 throw new Exception("El saldo a favor del paciente a cambiar, refresca la vista para actualizar la información");
             }
 
-            //$conexion->commit();
-            $conexion->rollback();
+            $conexion->commit();
+            //$conexion->rollback();
     
             // Devolver los datos en formato JSON
             $response = new Response();
@@ -472,6 +581,118 @@ return function (Micro $app,$di) {
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(404, 'Not found');
+            return $response;
+        }
+        
+    });
+
+    $app->get('/caja/tickets_count', function () use ($app,$db,$request) {
+        try{
+
+            $id             = $request->getQuery('id');
+            $folio          = $request->getQuery('folio');
+            $id_paciente    = $request->getQuery('id_paciente');
+        
+            // Definir el query SQL
+            $phql   = "SELECT 
+                            COUNT(1) as num_registros
+                        FROM tbtickets_pagos a 
+                        WHERE 1 = 1 ";
+            $values = array();
+
+            if (!empty($folio)) {
+                $phql           .= " AND lower(a.folio) ILIKE :folio";
+                $values['folio'] = "%".FuncionesGlobales::ToLower($folio)."%";
+            }
+
+            if (!empty($id_paciente)) {
+                $phql           .= " AND a.id_paciente = :id_paciente";
+                $values['id_paciente'] = $id_paciente;
+            }
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $num_registros  = 0;
+            while ($row = $result->fetch()) {
+                $num_registros  = $row['num_registros'];
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($num_registros);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setContent($e->getMessage());
+            $response->setStatusCode(400, 'Created');
+            return $response;
+        }
+        
+    });
+
+    // Ruta principal para obtener todos los registros
+    $app->get('/caja/tickets_show', function () use ($app,$db,$request) {
+        try{
+
+            $id             = $request->getQuery('id');
+            $folio          = $request->getQuery('folio');
+            $id_paciente    = $request->getQuery('id_paciente');
+        
+            // Definir el query SQL
+            $phql   = " SELECT  
+                            a.*,
+                            (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
+                            (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) as nombre_usuario
+                        FROM tbtickets_pagos a 
+                        LEFT JOIN ctpacientes b ON a.id_paciente = b.id
+                        LEFT JOIN ctusuarios c ON a.id_usuario_captura = c.id
+                        WHERE 1 = 1 ";
+            $values = array();
+
+            if (!empty($folio)) {
+                $phql           .= " AND lower(a.folio) ILIKE :folio";
+                $values['folio'] = "%".FuncionesGlobales::ToLower($folio)."%";
+            }
+
+            if (!empty($id_paciente)) {
+                $phql                   .= " AND a.id_paciente = :id_paciente";
+                $values['id_paciente']  = $id_paciente;
+            }
+            
+            $phql   .= ' ORDER BY a.fecha_captura DESC ';
+
+            if ($request->hasQuery('offset')){
+                $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');
+            }
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $data = [];
+            while ($row = $result->fetch()) {
+                $detalles           = json_decode($row['detalle'],true);
+                $row['total_pagar'] = '$'.FuncionesGlobales::formatearDecimal($detalles['total_pagar']);
+                $row['label_fecha'] = FuncionesGlobales::formatearFecha($row['fecha_captura'],'d/m/Y H:i');
+                $data[]             = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
             return $response;
         }
         
