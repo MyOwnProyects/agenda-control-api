@@ -677,10 +677,10 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $data = [];
             while ($row = $result->fetch()) {
-                $detalles           = json_decode($row['detalle'],true);
-                $row['total_pagar'] = '$'.FuncionesGlobales::formatearDecimal($detalles['total_pagar']);
-                $row['label_fecha'] = FuncionesGlobales::formatearFecha($row['fecha_captura'],'d/m/Y H:i');
-                $data[]             = $row;
+                $detalles               = json_decode($row['detalle'],true);
+                $row['monto_recibido']  = '$'.FuncionesGlobales::formatearDecimal($detalles['monto_recibido']);
+                $row['label_fecha']     = FuncionesGlobales::formatearFecha($row['fecha_captura'],'d/m/Y H:i');
+                $data[]                 = $row;
             }
     
             // Devolver los datos en formato JSON
