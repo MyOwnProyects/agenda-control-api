@@ -430,7 +430,18 @@ return function (Micro $app,$di) {
                 }
 
                 $id_abono   = null;
-                $monto      = $obj_info_pago[$metodo_pago['index']];
+                $monto = $obj_info_pago[$metodo_pago['index']];
+
+                // Validar que sea un monto monetario válido y mayor a 0
+                $monto = floatval($monto);
+
+                if (!is_numeric($monto) || round($monto, 2) < 0) {
+                    // Maneja el error según tu lógica
+                    throw new Exception('El monto debe ser mayor a 0.');
+                }
+
+                // Formatear a 2 decimales para asegurar formato monetario
+                $monto = round($monto, 2);
 
                 //  SI EL MONTO ES 0 NO SE CREA EL ABONO
                 if ($monto == 0){
