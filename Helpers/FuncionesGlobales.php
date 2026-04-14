@@ -200,7 +200,7 @@ class FuncionesGlobales {
             //  SE BUSCAN SI EL PACIENTE TIENE SALDO A FAVOR
             $saldo_favor    = 0;
             $phql   = "SELECT * FROM fn_saldo_favor_paciente(:id_paciente);";
-            $result = $db->query($phql,array(
+            $result = $conexion->query($phql,array(
                 'id_paciente'   => $id_paciente
             ));
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
@@ -232,7 +232,7 @@ class FuncionesGlobales {
                         OREDER BY a.fecha_registro;";
 
             $arr_abonos = array();
-            $result = $db->query($phql,array(
+            $result = $conexion->query($phql,array(
                 'id_paciente'   => $id_paciente
             ));
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
@@ -248,7 +248,7 @@ class FuncionesGlobales {
                         WHERE a.id_paciente = :id_paciente AND activa <> 0 AND pagada = 0
                         ORDER BY fecha_captura ASC;";
 
-            $result = $db->query($phql,array(
+            $result = $conexion->query($phql,array(
                 'id_paciente'   => $id_paciente
             ));
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);

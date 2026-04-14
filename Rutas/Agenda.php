@@ -530,6 +530,9 @@ return function (Micro $app,$di) {
                 throw new Exception('Usuario inexistente en el catalogo');
             }
 
+            //  ARRAY DE CITAS PACIENTES A UTILIZAR SALDO A FAVOR SI LA OPCION ES CANCELAR
+            $arr_pacientes_saldo_favor  = array();
+
             //  SE VERIFICA QUE LA CITA SE ENCUENTRE ACTIVA
             foreach($arr_id_agenda_cita as $id_agenda_cita){
                 $phql   = "SELECT 
@@ -565,6 +568,10 @@ return function (Micro $app,$di) {
                 // 1 CITA ACTIVA Y DISPONIBLE
                 // 0 CITA CANCELADA
                 // 2 CITA PENDIENTE DE AGENDAR
+
+                if ($tipo_movimiento == 'cancelar' && in_array($arr_cita_verificar['id_paciente'],$arr_pacientes_saldo_favor)){
+                    $arr_pacientes_saldo_favor[]    = $arr_cita_verificar['id_paciente'];                   
+                }
                 
                 $activa = $tipo_movimiento == 'cancelar' ? 0 : 2;
 
@@ -608,6 +615,23 @@ return function (Micro $app,$di) {
                         }
 
                         if ($data['citas_simultaneas'] > 0 && $tipo_accion_cita_simultanea == 'todas'){
+
+                            if ($tipo_movimiento == 'cancelar'){
+                                $phql               = "SELECT DISTINCT id_paciente FROM tbagenda_citas WHERE id_cita_simultanea = :id AND activa = 1";
+                                $result_pacientes   = $conexion->query($phql, array(
+                                    'id_cita_simultanea'    => $id_agenda_cita
+                                ));
+                                $result_pacientes->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                                if ($result_pacientes){
+                                    while($data_pacientes = $result_pacientes->fetch()){
+                                        if (in_array($data_pacientes['id_paciente'],$arr_pacientes_saldo_favor)){
+                                            $arr_pacientes_saldo_favor[]    = $arr_cita_verificar['id_paciente'];                   
+                                        }
+                                    }
+                                }
+                            }
+
                             //  SE REALIZA EL MISMO MOVIMIENTO A TODAS LAS CITAS SIMULTANEAS
                             //  Y ESTAS CITAS PASAN A SER CITAS INDIVIDUALES
                             $phql   = " UPDATE tbagenda_citas SET 
@@ -679,9 +703,16 @@ return function (Micro $app,$di) {
                     }
                 }
             }
+
+            //  SE APLICARA EL SALDO A FAVOR A LOS PACIENTES EN LISTA
+            if ($tipo_movimiento == 'cancelar' && count($arr_pacientes_saldo_favor) > 0){
+                foreach($arr_pacientes_saldo_favor as $id_paciente){
+                    FuncionesGlobales::AplicarSaldoFavor($conexion,$id_paciente,$id_usuario_solicitud);
+                }
+            }
             
-            $conexion->commit();
-            //$conexion->rollback();
+            //$conexion->commit();
+            $conexion->rollback();
 
             // RESPUESTA JSON
             $response = new Response();
