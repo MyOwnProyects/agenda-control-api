@@ -21,5 +21,5 @@ $$ LANGUAGE plpgsql;
 /* CREATE TRIGGER trg_fn_cancelar_citas
 AFTER UPDATE ON tbagenda_citas
 FOR EACH ROW
-WHEN (NEW.estatus = 0)  -- Solo cuando se cancela
+WHEN (NEW.activa = 0)  -- Solo cuando se cancela
 EXECUTE FUNCTION fn_cancelar_citas(); */

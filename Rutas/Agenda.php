@@ -505,6 +505,7 @@ return function (Micro $app,$di) {
             $tipo_movimiento            = $request->getPost('tipo_movimiento');
             $arr_id_agenda_cita         = $request->getPost('arr_id_agenda_cita') ?? array();
             $tipo_accion_cita_simultanea    = $request->getPost('tipo_accion_cita_simultanea') ?? null;
+            $tipo_accion_pagos              = $request->getPost('tipo_accion_pagos') ?? null;
 
             if (!empty($id_agenda_cita)){
                 $arr_id_agenda_cita = array($id_agenda_cita);
@@ -568,8 +569,7 @@ return function (Micro $app,$di) {
                 // 1 CITA ACTIVA Y DISPONIBLE
                 // 0 CITA CANCELADA
                 // 2 CITA PENDIENTE DE AGENDAR
-
-                if ($tipo_movimiento == 'cancelar' && in_array($arr_cita_verificar['id_paciente'],$arr_pacientes_saldo_favor)){
+                if ($tipo_movimiento == 'cancelar' && !in_array($arr_cita_verificar['id_paciente'],$arr_pacientes_saldo_favor)){
                     $arr_pacientes_saldo_favor[]    = $arr_cita_verificar['id_paciente'];                   
                 }
                 
@@ -705,14 +705,14 @@ return function (Micro $app,$di) {
             }
 
             //  SE APLICARA EL SALDO A FAVOR A LOS PACIENTES EN LISTA
-            if ($tipo_movimiento == 'cancelar' && count($arr_pacientes_saldo_favor) > 0){
+            if ($tipo_movimiento == 'cancelar' && count($arr_pacientes_saldo_favor) > 0 && $tipo_accion_pagos == 'reasignar'){
                 foreach($arr_pacientes_saldo_favor as $id_paciente){
                     FuncionesGlobales::AplicarSaldoFavor($conexion,$id_paciente,$id_usuario_solicitud);
                 }
             }
             
-            //$conexion->commit();
-            $conexion->rollback();
+            $conexion->commit();
+            //$conexion->rollback();
 
             // RESPUESTA JSON
             $response = new Response();

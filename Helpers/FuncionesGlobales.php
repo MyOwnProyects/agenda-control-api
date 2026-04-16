@@ -227,9 +227,9 @@ class FuncionesGlobales {
                             WHERE a.id = t1.id_abono 
                             AND t1.estatus = 1
                         ) b ON TRUE
-                        WHERE a.id_paciente = p_id_paciente
+                        WHERE a.id_paciente = :id_paciente
                         AND a.estatus = 1 AND a.monto - COALESCE(b.monto_usado, 0) > 0
-                        OREDER BY a.fecha_registro;";
+                        ORDER BY a.fecha_captura;";
 
             $arr_abonos = array();
             $result = $conexion->query($phql,array(
@@ -246,7 +246,7 @@ class FuncionesGlobales {
             //  SE BUSCAN TODAS LAS CITAS QUE NO ESTEN PAGADAS
             $phql   = " SELECT a.*,fn_saldo_cita(a.id) as saldo_cita FROM tbagenda_citas a
                         WHERE a.id_paciente = :id_paciente AND activa <> 0 AND pagada = 0
-                        ORDER BY fecha_captura ASC;";
+                        ORDER BY fecha_cita ASC;";
 
             $result = $conexion->query($phql,array(
                 'id_paciente'   => $id_paciente
@@ -270,8 +270,9 @@ class FuncionesGlobales {
             //  SE HACE EL RECORRIDO DE ABONOS PARA CREAR LOS MOVTOS
             foreach($arr_abonos as $index_abono => $abono){
                 // Formatear a 2 decimales para asegurar formato monetario
-                $monto  = $abono['cantidad_disponible'];
-                $monto  = round($monto, 2);
+                $monto      = $abono['cantidad_disponible'];
+                $monto      = round($monto, 2);
+                $id_abono   = $abono['id_abono'];
 
                 //  SE RECORREN TODAS LAS CITAS A PAGAR
                 foreach($arr_citas_pagar as $index => $cita_pagar){
@@ -309,7 +310,7 @@ class FuncionesGlobales {
                     
                     $values = array(
                         'id_abono'              => $id_abono,
-                        'id_agenda_cita'        => $cita_pagar['id_agenda_cita'],
+                        'id_agenda_cita'        => $cita_pagar['id'],
                         'monto'                 => $monto_movto,
                         'id_usuario_captura'    => $id_usuario_solicitud
                     );
@@ -319,7 +320,7 @@ class FuncionesGlobales {
                     //  SI SE LIQUIDO LA CITA ESTA SE SACA DEL ARRAY Y SE MARCA COMO PAGADA
                     if ($liquidar_cargo){
                         $phql   = "UPDATE tbagenda_citas SET pagada = 1, fecha_pago = NOW() WHERE id = :id_agenda_cita";
-                        $result = $conexion->execute($phql,array('id_agenda_cita' => $cita_pagar['id_agenda_cita']));
+                        $result = $conexion->execute($phql,array('id_agenda_cita' => $cita_pagar['id']));
 
                         unset($arr_citas_pagar[$index]);
                     }
