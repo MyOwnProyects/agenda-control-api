@@ -166,6 +166,32 @@ return function (Micro $app,$di) {
                 
                 $row['edad_actual']     = empty($row['edad_actual']) ? 'S/E' : $row['edad_actual'];
                 $row['nombre_completo'] = $row['nombre_completo'].' ('.$row['edad_actual'].')';
+
+                //  SE BUSCA SI LA CITA TIENE MOVIMIENTOS
+                $phql   = " SELECT 
+                                a.*,
+                                b.clave as clave_usuario_captura,
+                                COALESCE(c.clave,'') as clave_usuario_cancelacion 
+                            FROM tbabonos_movimientos a
+                            LEFT JOIN ctusuarios b ON a.id_usuario_captura = b.id
+                            LEFT JOIN ctusuarios c ON a.id_usuario_cancelacion = c.id
+                            WHERE a.id_agenda_cita = :id_agenda_cita 
+                            ORDER BY a.fecha_captura";
+
+                $result_movtos  = $db->query($phql,array('id_agenda_cita' => $row['id_agenda_cita']));
+                $result_movtos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                $arr_movtos = array();
+                if ($result_movtos){
+                    while($data_movtos = $result_movtos->fetch()){
+                        $data_movtos['fecha_captura']       = FuncionesGlobales::formatearFecha($data_movtos['fecha_captura'],'d/m/Y H:i');
+                        $data_movtos['fecha_cancelacion']   = FuncionesGlobales::formatearFecha($data_movtos['fecha_cancelacion'],'d/m/Y H:i');
+                        $data_movtos['label_estatus']       = $data_movtos['estatus'] == 1 ? 'Activo' : 'Cancelado';
+                        $arr_movtos[]                       = $data_movtos;
+                    }
+                }
+
+                $row['movimientos'] = $arr_movtos;
                 
                 $data[] = $row;
             }
