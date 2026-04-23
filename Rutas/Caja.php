@@ -478,15 +478,16 @@ return function (Micro $app,$di) {
                 $monto  = $monto * 1;
 
                 //  SE CREA EL ABONO
-                $phql   = " INSERT INTO tbabonos (id_paciente,monto,tipo_abono,metodo_pago,id_usuario_captura)
-                        VALUES (:id_paciente,:monto,:tipo_abono,:metodo_pago,:id_usuario_captura) RETURNING *";
+                $phql   = " INSERT INTO tbabonos (id_paciente,monto,tipo_abono,metodo_pago,id_usuario_captura,ticket_folio)
+                        VALUES (:id_paciente,:monto,:tipo_abono,:metodo_pago,:id_usuario_captura,:ticket_folio) RETURNING *";
                 
                 $values = array(
                     'id_paciente'   => $id_paciente,
                     'monto'         => $monto,
                     'tipo_abono'    => 1,
                     'metodo_pago'   => $metodo_pago['label_table'],
-                    'id_usuario_captura'    => $id_usuario_solicitud
+                    'id_usuario_captura'    => $id_usuario_solicitud,
+                    'ticket_folio'          => $folio_generado
                 );
 
                 $result = $conexion->query($phql, $values);
@@ -717,6 +718,66 @@ return function (Micro $app,$di) {
                 $detalles               = json_decode($row['detalle'],true);
                 $row['monto_recibido']  = '$'.FuncionesGlobales::formatearDecimal($detalles['monto_recibido']);
                 $row['label_fecha']     = FuncionesGlobales::formatearFecha($row['fecha_captura'],'d/m/Y H:i');
+                $data[]                 = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    // Ruta principal para obtener todos los registros
+    $app->get('/caja/abonos_show', function () use ($app,$db,$request) {
+        try{
+
+            $id_ticket  = $request->getQuery('id_ticket');
+            $folio      = $request->getQuery('folio');
+        
+            // Definir el query SQL
+            $phql   = " SELECT  
+                            a.*,
+                            COALESCE(b.clave,'') as clave_usuario_captura,
+                            COALESCE(c.clave,'') as clave_usuario_cancelacion
+                        FROM tbabonos a 
+                        LEFT JOIN ctusuarios b ON a.id_usuario_captura = b.id
+                        LEFT JOIN ctusuarios c ON a.id_usuario_cancelacion = c.id
+                        LEFT JOIN tbtickets_pagos d ON a.ticket_folio = d.folio
+                        WHERE 1 = 1 ";
+            $values = array();
+
+            if (!empty($folio)) {
+                $phql           .= " AND lower(a.ticket_folio) ILIKE :folio";
+                $values['folio'] = "%".FuncionesGlobales::ToLower($folio)."%";
+            }
+
+            if (!empty($id_ticket)) {
+                $phql                   .= " AND d.id = :id_ticket";
+                $values['id_ticket']    = $id_ticket;
+            }
+            
+            $phql   .= ' ORDER BY a.fecha_captura ASC ';
+    
+            // Ejecutar el query y obtener el resultado
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            // Recorrer los resultados
+            $data = [];
+            while ($row = $result->fetch()) {
+                $row['monto']       = '$'.FuncionesGlobales::formatearDecimal($row['monto']);
+                $row['label_fecha_captura']     = FuncionesGlobales::formatearFecha($row['fecha_captura'],'d/m/Y H:i');
+                $row['label_fecha_cancelacion'] = FuncionesGlobales::formatearFecha($row['fecha_cancelacion'],'d/m/Y H:i');
+                $row['observaciones_cancelacion']   = $row['observaciones_cancelacion'] == null ? '' : $row['observaciones_cancelacion'];
                 $data[]                 = $row;
             }
     
