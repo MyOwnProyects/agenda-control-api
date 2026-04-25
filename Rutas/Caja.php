@@ -795,4 +795,53 @@ return function (Micro $app,$di) {
         }
         
     });
+
+    // Ruta principal para obtener todos los registros
+    $app->put('/caja/save_cancelacion_devolucion', function () use ($app,$db,$request) {
+        try{
+
+            $arr_id_abono               = $request->getPost('arr_id_abono');
+            $observaciones_cancelacion  = $request->getPost('observaciones_cancelacion');
+            $usuario_solicitud          = $request->getPost('usuario_solicitud');
+
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
+            }
+        
+            //  SE RECORRE EL ARRAY DE ABONOS A CANCELAR
+            foreach($arr_id_abono as $id_abono){
+                //  SE VERIFICA SI EL ABONO SE REALIZO HACE N CANTIDAD DE DIAS 
+                //  ASI COMO EL ESTATUS DEL ABONO
+                $phql   = " SELECT 
+                                (CASE WHEN (a.fecha_captura + (b.valor)::integer * INTERVAL '1 day') <= now() 
+                                THEN 1 ELSE 0 END) AS  fecha_caducada,
+                                b.valor,
+                                a.
+                            FROM tbabonos a
+                            LEFT JOIN ctvariables_sistema b ON b.clave = 'dias_movimientos_citas_vencidas'
+                            WHERE a.id = 1;";
+                
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($data);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
 };
