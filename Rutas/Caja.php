@@ -822,11 +822,30 @@ return function (Micro $app,$di) {
                 $phql   = " SELECT 
                                 (CASE WHEN (a.fecha_captura + (b.valor)::integer * INTERVAL '1 day') <= now() 
                                 THEN 1 ELSE 0 END) AS  fecha_caducada,
-                                b.valor,
-                                a.
+                                tmp1.citas_activas_pasadas,
+                                a.estatus
                             FROM tbabonos a
                             LEFT JOIN ctvariables_sistema b ON b.clave = 'dias_movimientos_citas_vencidas'
-                            WHERE a.id = 1;";
+                            LEFT JOIN LATERAL(
+                                SELECT 
+                                    COUNT(*) as citas_activas_pasadas
+                                FROM tbabonos_movimientos t1
+                                LEFT JOIN tbagenda_citas t2 ON t1.id_agenda_cita = t2.id
+                                WHERE 	t1.id_abono = :id_abono AND 
+                                        t1.estatus = 1 AND 
+                                        t2.activa <> 0 
+                                        -- AND (t2.fecha_cita + (b.valor)::integer * INTERVAL '1 day') <= now() 
+                            ) tmp1 ON 1 = 1
+                            WHERE a.id = :id_abono;";
+
+                $result_validacion = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+                $result_validacion->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result_validacion){
+                    while($data_validacion = $result_validacion->fetch()){
+                        $id_usuario_solicitud   = $data['id'];
+                    }
+                }
                 
             }
     
