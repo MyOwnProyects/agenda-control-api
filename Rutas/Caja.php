@@ -737,26 +737,38 @@ return function (Micro $app,$di) {
     });
 
     // Ruta principal para obtener todos los registros
-    $app->get('/caja/abonos_show', function () use ($app,$db,$request) {
+    $app->get('/caja/ticket_movtos_show', function () use ($app,$db,$request) {
         try{
 
             $id_ticket  = $request->getQuery('id_ticket');
             $folio      = $request->getQuery('folio');
+
+            $dias_semana    = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
         
             // Definir el query SQL
             $phql   = " SELECT  
                             a.*,
+                            d.ticket_folio,
                             COALESCE(b.clave,'') as clave_usuario_captura,
-                            COALESCE(c.clave,'') as clave_usuario_cancelacion
-                        FROM tbabonos a 
+                            COALESCE(c.clave,'') as clave_usuario_cancelacion,
+                            d.estatus as estatus_abono,
+                            f.fecha_cita,
+                            TO_CHAR(f.hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(f.hora_termino, 'HH24:MI') AS hora_termino,
+                            f.activa as estatus_cita,
+                            d.metodo_pago,
+                            f.dia                                                                                                                                                                                                                                                                    
+                        FROM tbabonos_movimientos a 
                         LEFT JOIN ctusuarios b ON a.id_usuario_captura = b.id
                         LEFT JOIN ctusuarios c ON a.id_usuario_cancelacion = c.id
-                        LEFT JOIN tbtickets_pagos d ON a.ticket_folio = d.folio
+                        LEFT JOIN tbabonos d ON a.id_abono = d.id
+                        LEFT JOIN tbtickets_pagos e ON d.ticket_folio = e.folio
+                        LEFT JOIN tbagenda_citas f ON a.id_agenda_cita = f.id
                         WHERE 1 = 1 ";
             $values = array();
 
             if (!empty($folio)) {
-                $phql           .= " AND lower(a.ticket_folio) ILIKE :folio";
+                $phql           .= " AND lower(d.ticket_folio) ILIKE :folio";
                 $values['folio'] = "%".FuncionesGlobales::ToLower($folio)."%";
             }
 
@@ -765,7 +777,7 @@ return function (Micro $app,$di) {
                 $values['id_ticket']    = $id_ticket;
             }
             
-            $phql   .= ' ORDER BY a.fecha_captura ASC ';
+            $phql   .= ' ORDER BY d.metodo_pago,a.fecha_captura ASC,f.fecha_cita ASC ';
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -775,6 +787,8 @@ return function (Micro $app,$di) {
             $data = [];
             while ($row = $result->fetch()) {
                 $row['monto']       = '$'.FuncionesGlobales::formatearDecimal($row['monto']);
+                $row['label_fecha_cita']        = FuncionesGlobales::formatearFecha($row['fecha_cita']);
+                $row['label_dia']               = $dias_semana[$row['dia'] - 1];
                 $row['label_fecha_captura']     = FuncionesGlobales::formatearFecha($row['fecha_captura'],'d/m/Y H:i');
                 $row['label_fecha_cancelacion'] = FuncionesGlobales::formatearFecha($row['fecha_cancelacion'],'d/m/Y H:i');
                 $row['observaciones_cancelacion']   = $row['observaciones_cancelacion'] == null ? '' : $row['observaciones_cancelacion'];
@@ -798,11 +812,28 @@ return function (Micro $app,$di) {
 
     // Ruta principal para obtener todos los registros
     $app->put('/caja/save_cancelacion_devolucion', function () use ($app,$db,$request) {
+        $conexion   = $this->db;
         try{
 
-            $arr_id_abono               = $request->getPost('arr_id_abono');
+            $conexion->begin();
+
+            $arr_id_abono_movimiento    = $request->getPost('arr_id_abono_movimiento');
             $observaciones_cancelacion  = $request->getPost('observaciones_cancelacion');
             $usuario_solicitud          = $request->getPost('usuario_solicitud');
+            $tipo_cancelacion           = $request->getPost('tipo_cancelacion');
+
+            //  VALIDACION DE CAMPOS
+            if (empty($arr_id_abono_movimiento) && count($arr_id_abono_movimiento) == 0){
+                throw new Exception('Lista de movimientos vacia');
+            }
+
+            if (empty($observaciones_cancelacion) || trim($observaciones_cancelacion) == ''){
+                throw new Exception("Observaciones obligatorias");
+            }
+
+            if (empty($tipo_cancelacion)){
+                throw new Exception('Tipo de movimiento vacio');
+            }
 
             $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
             $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
@@ -816,45 +847,148 @@ return function (Micro $app,$di) {
             }
         
             //  SE RECORRE EL ARRAY DE ABONOS A CANCELAR
-            foreach($arr_id_abono as $id_abono){
+            foreach($arr_id_abono_movimiento as $id_abono_movimiento){
                 //  SE VERIFICA SI EL ABONO SE REALIZO HACE N CANTIDAD DE DIAS 
                 //  ASI COMO EL ESTATUS DEL ABONO
                 $phql   = " SELECT 
-                                (CASE WHEN (a.fecha_captura + (b.valor)::integer * INTERVAL '1 day') <= now() 
+                                (CASE WHEN (d.fecha_captura + (b.valor)::integer * INTERVAL '1 day') <= now() 
                                 THEN 1 ELSE 0 END) AS  fecha_caducada,
-                                tmp1.citas_activas_pasadas,
-                                a.estatus
-                            FROM tbabonos a
+                                a.estatus as estatus_movto,
+                                d.estatus as estatus_abono,
+                                a.id_abono,
+                                a.id_agenda_cita
+                            FROM tbabonos_movimientos a
                             LEFT JOIN ctvariables_sistema b ON b.clave = 'dias_movimientos_citas_vencidas'
-                            LEFT JOIN LATERAL(
-                                SELECT 
-                                    COUNT(*) as citas_activas_pasadas
-                                FROM tbabonos_movimientos t1
-                                LEFT JOIN tbagenda_citas t2 ON t1.id_agenda_cita = t2.id
-                                WHERE 	t1.id_abono = :id_abono AND 
-                                        t1.estatus = 1 AND 
-                                        t2.activa <> 0 
-                                        -- AND (t2.fecha_cita + (b.valor)::integer * INTERVAL '1 day') <= now() 
-                            ) tmp1 ON 1 = 1
-                            WHERE a.id = :id_abono;";
+                            LEFT JOIN tbagenda_citas c ON a.id_agenda_cita = c.id
+                            LEFT JOIN tbabonos d ON a.id_abono = d.id
+                            WHERE a.id = :id_abono_movimiento;";
 
-                $result_validacion = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+                $result_validacion = $db->query($phql,array(
+                    'id_abono_movimiento' => $id_abono_movimiento,
+                    ));
                 $result_validacion->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
                 if ($result_validacion){
                     while($data_validacion = $result_validacion->fetch()){
-                        $id_usuario_solicitud   = $data['id'];
+                        //  FECHA CADUCADA
+                        if ($data_validacion['fecha_caducada'] == 1){
+                            throw new Exception('Se cumplió la fecha limite para permitir cambios a los movimientos');
+                        }
+
+                        //  SOLO SE PUEDEN CANCELAR MOVIMIENTOS CON ESTATUS = 1
+                        if ($tipo_cancelacion == 1 && $data_validacion['estatus_movto'] != 1){
+                            throw new Exception('El estatus de uno de los movimiento no permite realizar la cancelación');
+                        }
+
+                        //  EL ABONO YA FUE MARCADO COMO DEVOUCION
+                        if ($data_validacion['estatus_abono'] != 1){
+                            throw new Exception("El abono no se encuetra activo, por lo cual ya no permite realizarle mas cambios a los movimientos");
+                        }
+
+                        //  SE MARCA EL MOVIMIENTO COMO CANCELADO O DEVOLUCION
+                        $phql   = "UPDATE tbabonos_movimientos SET 
+                                            estatus = 0, 
+                                            tipo_cancelacion = :tipo_cancelacion,
+                                            fecha_cancelacion = now(), 
+                                            id_usuario_cancelacion = :id_usuario_cancelacion,
+                                            observaciones_cancelacion = :observaciones_cancelacion
+                                        WHERE id = :id_abono_movimiento";
+
+                        $values = array(
+                            'tipo_cancelacion'          => $tipo_cancelacion,
+                            'id_usuario_cancelacion'    => $id_usuario_solicitud,
+                            'observaciones_cancelacion' => $observaciones_cancelacion,
+                            'id_abono_movimiento'       => $id_abono_movimiento
+                        );
+
+                        $result_update  = $conexion->execute($phql,$values);
+
+                        //  SI ES DEVOLUCION SE BUSCA SI EL ABONO SE PUEDE MARCAR TAMBIEN
+                        //  PORQUE TODOS LOS MOVIMIENTOS ESTAN MARCADOS COMO DEVOLUCION
+                        //  ES DECIR ESTATUS = 0 Y TIPO_CANCELACION = 2
+                        if ($tipo_cancelacion == 2){
+                            $phql   = " SELECT 
+                                            COUNT(*) as movimientos_bloqueadores 
+                                        FROM tbabonos_movimientos WHERE 
+                                        id_abono = :id_abono AND 
+                                        (estatus <> 0 OR 
+                                            (estatus = 0 AND tipo_cancelacion = 1)
+                                        )";
+
+                            $flag_devolucion_total  = false;
+
+                            $result_movtos  = $db->query($phql,array(
+                                'id_abono' => $data_validacion['id_abono']
+                                ));
+                            $result_movtos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                            while($data_movtos = $result_movtos->fetch()){
+                                if ($data_movtos['movimientos_bloqueadores'] == 0){
+                                    $flag_devolucion_total  = true;
+                                }
+                            }
+
+                            if ($flag_devolucion_total){
+                                //  SE MARCA EL MOVIMIENTO COMO CANCELADO O DEVOLUCION
+                                $phql   = "UPDATE tbabonos SET 
+                                                    estatus = 0, 
+                                                    tipo_cancelacion = :tipo_cancelacion,
+                                                    fecha_cancelacion = now(), 
+                                                    id_usuario_cancelacion = :id_usuario_cancelacion,
+                                                    observaciones_cancelacion = :observaciones_cancelacion
+                                                WHERE id = :id_abono";
+
+                                $values = array(
+                                    'tipo_cancelacion'          => $tipo_cancelacion,
+                                    'id_usuario_cancelacion'    => $id_usuario_solicitud,
+                                    'observaciones_cancelacion' => $observaciones_cancelacion,
+                                    'id_abono'                  => $data_validacion['id_abono']
+                                );
+
+                                $result_update_abono    = $conexion->execute($phql,$values);
+                            }
+                            
+                        }
+
+                        //  SE VERIFICA EL SALDO DE LA CITA A LA QUE APUNTA EL MOVIMIENTO
+                        //  ESTO PARA MARCAR LA CITA COMO PAGADA = 0
+                        $phql   = " SELECT 
+                                        fn_saldo_cita(a.id) as saldo_cita,
+                                        a.activa,
+                                        a.pagada,
+                                        a.total
+                                    FROM tbagenda_citas a WHERE a.id = :id_agenda_cita";
+
+                        $result_cita    = $db->query($phql,array(
+                            'id_agenda_cita' => $data_validacion['id_agenda_cita']
+                            ));
+                        $result_cita->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                        while($data_cita = $result_cita->fetch()){
+                            //  PARA MODIFICAR EL ESTATUS DE PAGADA DE LA CITA ESTA DEBE DE:
+                            //  1. ESTAR ACTIVA
+                            //  2. ESTAR MARCADA COMO PAGADA
+                            //  3. EL TOTAL DE LA CITA ES MAYOR QUE EL SALDO_CITA
+                            if ($data_cita['activa'] != 0 && $data_cita['pagada'] == 1 && $data_cita['saldo_cita'] > 0){
+                                $phql   = "UPDATE tbagenda_citas SET pagada = 0, fecha_pago = null, id_usuario_pago = null, forma_pago = null WHERE id = :id_agenda_cita";
+                                $result_update_cita = $conexion->execute($phql,array('id_agenda_cita' => $data_validacion['id_agenda_cita']));
+                            }
+                        }
                     }
                 }
                 
             }
+
+            $conexion->commit();
+            //$conexion->rollback();
     
             // Devolver los datos en formato JSON
             $response = new Response();
-            $response->setJsonContent($data);
+            $response->setJsonContent(array('MSG' => 'OK'));
             $response->setStatusCode(200, 'OK');
             return $response;
         }catch (\Exception $e){
+            $conexion->rollback();
             // Devolver los datos en formato JSON
             $response = new Response();
             $response->setJsonContent($e->getMessage());
