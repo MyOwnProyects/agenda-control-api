@@ -219,13 +219,16 @@ class FuncionesGlobales {
             }
 
             //  SE OBTIENEN TODOS LOS ABONOS QUE HA REALIZO EL PACIENTE QUE TENGAN SALDO A FAVOR
-            $phql   = " SELECT a.id as id_abono,a.monto - COALESCE(b.monto_usado, 0) as cantidad_disponible
+            $phql   = " SELECT 
+                            a.id as id_abono,
+                            a.monto - COALESCE(b.monto_usado, 0) as cantidad_disponible,
+                            a.ticket_folio
                         FROM tbabonos a
                         LEFT JOIN LATERAL (
                             SELECT SUM(t1.monto) AS monto_usado 
                             FROM tbabonos_movimientos t1
                             WHERE a.id = t1.id_abono 
-                            AND t1.estatus = 1
+                            AND (t1.estatus = 1 OR (t1.estatus = 0 AND t1.tipo_cancelacion = 2))
                         ) b ON TRUE
                         WHERE a.id_paciente = :id_paciente
                         AND a.estatus = 1 AND a.monto - COALESCE(b.monto_usado, 0) > 0
@@ -273,6 +276,7 @@ class FuncionesGlobales {
                 $monto      = $abono['cantidad_disponible'];
                 $monto      = round($monto, 2);
                 $id_abono   = $abono['id_abono'];
+                $ticket_folio   = $abono['ticket_folio'];
 
                 //  SE RECORREN TODAS LAS CITAS A PAGAR
                 foreach($arr_citas_pagar as $index => $cita_pagar){
@@ -299,20 +303,23 @@ class FuncionesGlobales {
                                             id_abono,
                                             id_agenda_cita,
                                             monto,
-                                            id_usuario_captura
+                                            id_usuario_captura,
+                                            ticket_folio
                                             )
                                         VALUES (
                                             :id_abono,
                                             :id_agenda_cita,
                                             :monto,
-                                            :id_usuario_captura
+                                            :id_usuario_captura,
+                                            :ticket_folio
                                         )";
                     
                     $values = array(
                         'id_abono'              => $id_abono,
                         'id_agenda_cita'        => $cita_pagar['id'],
                         'monto'                 => $monto_movto,
-                        'id_usuario_captura'    => $id_usuario_solicitud
+                        'id_usuario_captura'    => $id_usuario_solicitud,
+                        'ticket_folio'          => $ticket_folio
                     );
 
                     $result = $conexion->execute($phql,$values);

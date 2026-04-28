@@ -371,7 +371,7 @@ return function (Micro $app,$di) {
                                 SELECT SUM(t1.monto) AS monto_usado 
                                 FROM tbabonos_movimientos t1
                                 WHERE a.id = t1.id_abono 
-                                AND t1.estatus = 1
+                                AND (t1.estatus = 1 OR (t1.estatus = 0 AND t1.tipo_cancelacion = 2))
                             ) b ON TRUE
                             WHERE a.id_paciente = :id_paciente
                             AND a.estatus = 1
@@ -412,20 +412,23 @@ return function (Micro $app,$di) {
                                                     id_abono,
                                                     id_agenda_cita,
                                                     monto,
-                                                    id_usuario_captura
+                                                    id_usuario_captura,
+                                                    ticket_folio
                                                     )
                                                 VALUES (
                                                     :id_abono,
                                                     :id_agenda_cita,
                                                     :monto,
-                                                    :id_usuario_captura
+                                                    :id_usuario_captura,
+                                                    :ticket_folio
                                                 )";
                             
                             $values = array(
                                 'id_abono'              => $id_abono,
                                 'id_agenda_cita'        => $cita_pagar['id_agenda_cita'],
                                 'monto'                 => $monto_movto,
-                                'id_usuario_captura'    => $id_usuario_solicitud
+                                'id_usuario_captura'    => $id_usuario_solicitud,
+                                'ticket_folio'          => $folio_generado
                             );
 
                             $result = $conexion->execute($phql,$values);
@@ -526,20 +529,23 @@ return function (Micro $app,$di) {
                                             id_abono,
                                             id_agenda_cita,
                                             monto,
-                                            id_usuario_captura
+                                            id_usuario_captura,
+                                            ticket_folio
                                             )
                                         VALUES (
                                             :id_abono,
                                             :id_agenda_cita,
                                             :monto,
-                                            :id_usuario_captura
+                                            :id_usuario_captura,
+                                            :ticket_folio
                                         )";
                     
                     $values = array(
                         'id_abono'              => $id_abono,
                         'id_agenda_cita'        => $cita_pagar['id_agenda_cita'],
                         'monto'                 => $monto_movto,
-                        'id_usuario_captura'    => $id_usuario_solicitud
+                        'id_usuario_captura'    => $id_usuario_solicitud,
+                        'ticket_folio'          => $folio_generado
                     );
 
                     $result = $conexion->execute($phql,$values);
@@ -748,7 +754,6 @@ return function (Micro $app,$di) {
             // Definir el query SQL
             $phql   = " SELECT  
                             a.*,
-                            d.ticket_folio,
                             COALESCE(b.clave,'') as clave_usuario_captura,
                             COALESCE(c.clave,'') as clave_usuario_cancelacion,
                             d.estatus as estatus_abono,
@@ -768,7 +773,7 @@ return function (Micro $app,$di) {
             $values = array();
 
             if (!empty($folio)) {
-                $phql           .= " AND lower(d.ticket_folio) ILIKE :folio";
+                $phql           .= " AND lower(a.ticket_folio) ILIKE :folio";
                 $values['folio'] = "%".FuncionesGlobales::ToLower($folio)."%";
             }
 

@@ -13,7 +13,7 @@ BEGIN
         SELECT SUM(t1.monto) AS monto_usado 
         FROM tbabonos_movimientos t1
         WHERE a.id = t1.id_abono 
-        AND t1.estatus = 1
+        AND (t1.estatus = 1 OR (t1.estatus = 0 AND t1.tipo_cancelacion = 2)) 
     ) b ON TRUE
     WHERE a.id_paciente = p_id_paciente
     AND a.estatus = 1;
