@@ -459,7 +459,14 @@ return function (Micro $app,$di) {
                 }
 
                 $id_abono   = null;
-                $monto = $obj_info_pago[$metodo_pago['index']];
+                $monto      = $obj_info_pago[$metodo_pago['index']];
+                $referenca_transferencia    = null;
+                $fecha_hora_transferencia   = null;
+
+                if ($index_metodo_pago == 'pago_transferencia'){
+                    $referenca_transferencia    = null;
+                    $fecha_hora_transferencia   = null;
+                }
 
                 // Validar que sea un monto monetario válido y mayor a 0
                 $monto = floatval($monto);
@@ -636,6 +643,15 @@ return function (Micro $app,$di) {
             $id             = $request->getQuery('id');
             $folio          = $request->getQuery('folio');
             $id_paciente    = $request->getQuery('id_paciente');
+            $fecha_cita     = $request->getQuery('fecha_cita');
+            $from_caja      = $request->getQuery('from_caja');
+
+            if ($from_caja && empty($id_paciente)){
+                $response = new Response();
+                $response->setJsonContent(0);
+                $response->setStatusCode(200, 'OK');
+                return $response;
+            }
         
             // Definir el query SQL
             $phql   = "SELECT 
@@ -652,6 +668,15 @@ return function (Micro $app,$di) {
             if (!empty($id_paciente)) {
                 $phql           .= " AND a.id_paciente = :id_paciente";
                 $values['id_paciente'] = $id_paciente;
+            }
+
+            if (!empty($fecha_cita)){
+                $phql   .= ' AND EXISTS (
+                                    SELECT 1 FROM tbabonos_movimientos t1
+                                    LEFT JOIN tbagenda_citas t2 ON t1.id_agenda_cita = t2.id
+                                    WHERE t2.fecha_cita = :fecha_cita AND t1.ticket_folio = a.folio       
+                                ) ';
+                $values['fecha_cita']   = $fecha_cita;
             }
     
             // Ejecutar el query y obtener el resultado
@@ -686,6 +711,7 @@ return function (Micro $app,$di) {
             $id             = $request->getQuery('id');
             $folio          = $request->getQuery('folio');
             $id_paciente    = $request->getQuery('id_paciente');
+            $fecha_cita     = $request->getQuery('fecha_cita');
         
             // Definir el query SQL
             $phql   = " SELECT  
@@ -706,6 +732,15 @@ return function (Micro $app,$di) {
             if (!empty($id_paciente)) {
                 $phql                   .= " AND a.id_paciente = :id_paciente";
                 $values['id_paciente']  = $id_paciente;
+            }
+
+            if (!empty($fecha_cita)){
+                $phql   .= ' AND EXISTS (
+                                    SELECT 1 FROM tbabonos_movimientos t1
+                                    LEFT JOIN tbagenda_citas t2 ON t1.id_agenda_cita = t2.id
+                                    WHERE t2.fecha_cita = :fecha_cita AND t1.ticket_folio = a.folio       
+                                ) ';
+                $values['fecha_cita']   = $fecha_cita;
             }
             
             $phql   .= ' ORDER BY a.fecha_captura DESC ';
