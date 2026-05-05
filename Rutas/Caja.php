@@ -463,9 +463,20 @@ return function (Micro $app,$di) {
                 $referenca_transferencia    = null;
                 $fecha_hora_transferencia   = null;
 
-                if ($index_metodo_pago == 'pago_transferencia'){
-                    $referenca_transferencia    = null;
-                    $fecha_hora_transferencia   = null;
+                if ($metodo_pago['index'] != 'pago_efectivo'){
+                    $referenca_transferencia    = $obj_info_pago['referencia_transferencia'];
+                    $referenca_transferencia    = trim($referenca_transferencia);
+                    $fecha_transferencia        = $obj_info_pago['fecha_transferencia'];
+                    $hora_transferencia         = $obj_info_pago['hora_transferencia'];
+
+                    $hora_transferencia = $obj_info_pago['hora_transferencia'];
+
+                    // Si no viene hora, usar la hora actual del servidor
+                    if (empty($hora_transferencia)) {
+                        $hora_transferencia = date('H:i:s');
+                    }
+
+                    $fecha_hora_transferencia   = $fecha_transferencia.' '.$hora_transferencia;
                 }
 
                 // Validar que sea un monto monetario válido y mayor a 0
@@ -488,8 +499,8 @@ return function (Micro $app,$di) {
                 $monto  = $monto * 1;
 
                 //  SE CREA EL ABONO
-                $phql   = " INSERT INTO tbabonos (id_paciente,monto,tipo_abono,metodo_pago,id_usuario_captura,ticket_folio)
-                        VALUES (:id_paciente,:monto,:tipo_abono,:metodo_pago,:id_usuario_captura,:ticket_folio) RETURNING *";
+                $phql   = " INSERT INTO tbabonos (id_paciente,monto,tipo_abono,metodo_pago,id_usuario_captura,ticket_folio,fecha_hora_pago,referencia)
+                        VALUES (:id_paciente,:monto,:tipo_abono,:metodo_pago,:id_usuario_captura,:ticket_folio,:fecha_hora_pago,:referencia) RETURNING *";
                 
                 $values = array(
                     'id_paciente'   => $id_paciente,
@@ -497,7 +508,9 @@ return function (Micro $app,$di) {
                     'tipo_abono'    => 1,
                     'metodo_pago'   => $metodo_pago['label_table'],
                     'id_usuario_captura'    => $id_usuario_solicitud,
-                    'ticket_folio'          => $folio_generado
+                    'ticket_folio'          => $folio_generado,
+                    'fecha_hora_pago'       => $fecha_hora_transferencia == '' || $fecha_hora_transferencia == null ? 'now()' : $fecha_hora_transferencia,
+                    'referencia'            => $referenca_transferencia
                 );
 
                 $result = $conexion->query($phql, $values);
