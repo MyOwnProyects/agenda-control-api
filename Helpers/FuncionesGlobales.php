@@ -232,7 +232,7 @@ class FuncionesGlobales {
                         ) b ON TRUE
                         WHERE a.id_paciente = :id_paciente
                         AND a.estatus = 1 AND a.monto - COALESCE(b.monto_usado, 0) > 0
-                        ORDER BY a.fecha_captura;";
+                        ORDER BY a.fecha_hora_pago;";
 
             $arr_abonos = array();
             $result = $conexion->query($phql,array(

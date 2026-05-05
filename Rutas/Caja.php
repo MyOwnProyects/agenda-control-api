@@ -176,7 +176,7 @@ return function (Micro $app,$di) {
                             LEFT JOIN ctusuarios b ON a.id_usuario_captura = b.id
                             LEFT JOIN ctusuarios c ON a.id_usuario_cancelacion = c.id
                             WHERE a.id_agenda_cita = :id_agenda_cita 
-                            ORDER BY a.fecha_captura";
+                            ORDER BY a.fecha_hora_pago";
 
                 $result_movtos  = $db->query($phql,array('id_agenda_cita' => $row['id_agenda_cita']));
                 $result_movtos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
@@ -376,6 +376,7 @@ return function (Micro $app,$di) {
                             WHERE a.id_paciente = :id_paciente
                             AND a.estatus = 1
                             AND (a.monto - COALESCE(b.monto_usado, 0)) > 0
+                            ORDER BY a.fecha_hora_pago
                             ;";
 
                 $result_saldo_favor = $db->query($phql,array(
@@ -550,14 +551,16 @@ return function (Micro $app,$di) {
                                             id_agenda_cita,
                                             monto,
                                             id_usuario_captura,
-                                            ticket_folio
+                                            ticket_folio,
+                                            fecha_hora_pago
                                             )
                                         VALUES (
                                             :id_abono,
                                             :id_agenda_cita,
                                             :monto,
                                             :id_usuario_captura,
-                                            :ticket_folio
+                                            :ticket_folio,
+                                            :fecha_hora_pago
                                         )";
                     
                     $values = array(
@@ -565,7 +568,8 @@ return function (Micro $app,$di) {
                         'id_agenda_cita'        => $cita_pagar['id_agenda_cita'],
                         'monto'                 => $monto_movto,
                         'id_usuario_captura'    => $id_usuario_solicitud,
-                        'ticket_folio'          => $folio_generado
+                        'ticket_folio'          => $folio_generado,
+                        'fecha_hora_pago'       => $fecha_hora_transferencia == '' || $fecha_hora_transferencia == null ? 'now()' : $fecha_hora_transferencia,
                     );
 
                     $result = $conexion->execute($phql,$values);
@@ -830,7 +834,7 @@ return function (Micro $app,$di) {
                 $values['id_ticket']    = $id_ticket;
             }
             
-            $phql   .= ' ORDER BY d.metodo_pago,a.fecha_captura ASC,f.fecha_cita ASC ';
+            $phql   .= ' ORDER BY d.metodo_pago,a.fecha_hora_pago ASC,f.fecha_cita ASC ';
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
