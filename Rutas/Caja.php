@@ -184,6 +184,7 @@ return function (Micro $app,$di) {
                 $arr_movtos = array();
                 if ($result_movtos){
                     while($data_movtos = $result_movtos->fetch()){
+                        $data_movtos['fecha_hora_pago']     = FuncionesGlobales::formatearFecha($data_movtos['fecha_hora_pago'],'d/m/Y H:i');
                         $data_movtos['fecha_captura']       = FuncionesGlobales::formatearFecha($data_movtos['fecha_captura'],'d/m/Y H:i');
                         $data_movtos['fecha_cancelacion']   = FuncionesGlobales::formatearFecha($data_movtos['fecha_cancelacion'],'d/m/Y H:i');
                         $data_movtos['label_estatus']       = $data_movtos['estatus'] == 1 ? 'Activo' : 'Cancelado';
