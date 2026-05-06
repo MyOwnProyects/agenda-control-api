@@ -617,7 +617,7 @@ return function (Micro $app,$di) {
                         if ($data['citas_simultaneas'] > 0 && $tipo_accion_cita_simultanea == 'todas'){
 
                             if ($tipo_movimiento == 'cancelar'){
-                                $phql               = "SELECT DISTINCT id_paciente FROM tbagenda_citas WHERE id_cita_simultanea = :id AND activa = 1";
+                                $phql               = "SELECT DISTINCT id_paciente FROM tbagenda_citas WHERE id_cita_simultanea = :id_cita_simultanea AND activa = 1";
                                 $result_pacientes   = $conexion->query($phql, array(
                                     'id_cita_simultanea'    => $id_agenda_cita
                                 ));
