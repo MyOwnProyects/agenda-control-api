@@ -445,15 +445,25 @@ return function (Micro $app,$di) {
         }
     });
 
-    $app->post('/tbapertura_agenda/save', function () use ($app,$db,$request) {        
+    $app->post('/tbapertura_agenda/save', function () use ($app,$db,$request) { 
+        $conexion   = $db;   
         try{
+
+            $conexion->begin();
 
             $id_locacion    = $request->getPost('id_locacion') ?? null;
             $id_paciente    = $request->getPost('id_paciente') ?? null;
             $fecha_inicio   = $request->getPost('fecha_inicio') ?? null;
             $fecha_termino  = $request->getPost('fecha_termino') ?? null;
             $clave_usuario  = $request->getPost('usuario_solicitud') ?? null;
+            $aplicar_saldo_favor    = $request->getPost('aplicar_saldo_favor') ?? null;
+            $usuario_solicitud      = $request->getPost('usuario_solicitud');
             $return_mensaje = 'OK';
+
+            //  SI ES APERTURA DE AGENDA DEBE DE ESPECIFICAR QUE PASARA CON EL SALDO A FAVOR
+            if ($aplicar_saldo_favor == null && !is_numeric($id_paciente)){
+                throw new Exception('Especifique que acción se tomará sobre el saldo a favor de los pacientes');
+            }
 
             try{
                 //  SE AGENDAN LAS CITAS DEL PACIENTE
@@ -466,7 +476,7 @@ return function (Micro $app,$di) {
                     'clave_usuario' => $clave_usuario
                 );
 
-                $result = $db->query($phql,$values);
+                $result = $conexion->query($phql,$values);
                 $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
                 if ($result){
@@ -477,6 +487,50 @@ return function (Micro $app,$di) {
             }catch(\Exception $err){
                 throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
             }
+
+            //  SE BUSCA EL ID DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
+            }
+
+            //  SE APLICARA EL SALDO A FAVOR A LOS PACIENTES EN LISTA
+            if ($aplicar_saldo_favor == 1 || is_numeric($id_paciente)){
+
+                $arr_pacientes_saldo_favor  = array();
+
+                if (!is_numeric($id_paciente)){
+                    //  SE BUSCA EL ID DE LOS PACIENTES A LOS QUE SE LES GENERO UN HORARIO
+                    $phql   = "SELECT a.id_paciente
+                                FROM tbcitas_programadas a 
+                                LEFT JOIN ctpacientes b  ON a.id_paciente = b.id 
+                                WHERE b.estatus = 1 AND a.id_locacion = :id_locacion;";
+
+                    $result = $db->query($phql,array('id_locacion' => $id_locacion));
+                    $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result){
+                        while($data = $result->fetch()){
+                            $arr_pacientes_saldo_favor[]    = $data['id_paciente'];
+                        }
+                    }
+                } else {
+                    $arr_pacientes_saldo_favor[]    = $id_paciente;
+                }
+
+                foreach($arr_pacientes_saldo_favor as $id_paciente){
+                    FuncionesGlobales::AplicarSaldoFavor($conexion,$id_paciente,$id_usuario_solicitud);
+                }
+            }
+
+            $conexion->commit();
+            //$conexion->rollback();
     
             // RESPUESTA JSON
             $response = new Response();
@@ -485,6 +539,7 @@ return function (Micro $app,$di) {
             return $response;
 
         }catch (\Exception $e){
+            $conexion->rollback();
             // Devolver los datos en formato JSON
             $response = new Response();
             $response->setJsonContent($e->getMessage());
