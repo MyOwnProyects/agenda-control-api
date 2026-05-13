@@ -404,30 +404,24 @@ return function (Micro $app,$di) {
 
             $filtro = '';
             if (!empty($id_locacion)) {
-                $filtro .= " AND a.id_locacion = :id_locacion ";
+                $filtro .= "    AND EXISTS (
+                                    SELECT 1 FROM tbabonos_movimientos t1
+                                    LEFT JOIN tbagenda_citas t2 ON t1.id_agenda_cita = t2.id 
+                                    WHERE t1.id_abono = a.id AND t2.id_locacion = :id_locacion
+                                ) ";
                 $values['id_locacion']  = $id_locacion;
             }
             
             $phql   = " SELECT 
-                            fecha_pago::DATE,
-                            SUM(CASE WHEN a.forma_pago = 'TRANSFERENCIA' THEN a.total ELSE 0 END) AS total_transferencia,
-                            SUM(CASE WHEN a.forma_pago = 'EFECTIVO' THEN a.total ELSE 0 END) AS total_efectivo,
-                            SUM (total) as total_pagos 
-                        FROM tbagenda_citas a WHERE a.pagada = 1 ".$filtro."
-                            AND a.fecha_pago BETWEEN :fecha_inicio AND :fecha_termino AND NOT EXISTS (
-                                    SELECT 1 FROM tbagenda_citas t1 
-                                    WHERE a.id = t1.id_cita_reagendada 
-                                ) 
-                            --  EXCLUYE CITAS PAGADAS QUE POR NUEVA GENERACIO NDE CITAS SE HAYAN CANCELADO
-                            AND NOT EXISTS(
-                                SELECT 1 FROM tbagenda_citas t2 
-                                LEFT JOIN ctmotivos_cancelacion_cita t4 ON t2.id_motivo_cancelacion = t4.id
-                                WHERE t2.activa = 0 AND t2.pagada = 1 
-                                AND t2.id_cita_programada IS NOT NULL AND t4.clave = 'NGC' AND NOT EXISTS (
-                                    SELECT 1 FROM tbagenda_citas t3 WHERE t2.id = t3.id_cita_reagendada 
-                                ) AND t2.id = a.id
-                            )
-                            GROUP BY fecha_pago::DATE ORDER BY fecha_pago";
+                            fecha_hora_pago::DATE,
+                            SUM(CASE WHEN a.metodo_pago = 'TRANSFERENCIA' THEN a.monto ELSE 0 END) AS total_transferencia,
+                            SUM(CASE WHEN a.metodo_pago = 'EFECTIVO' THEN a.monto ELSE 0 END) AS total_efectivo,
+                            SUM (a.monto) as total_pagos
+                        FROM tbabonos a 
+                        WHERE a.fecha_hora_pago::DATE BETWEEN :fecha_inicio AND :fecha_termino
+                        AND a.estatus = 1
+                        $filtro
+                        GROUP BY a.fecha_hora_pago";
     
             $result = $db->query($phql,$values);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
@@ -442,7 +436,7 @@ return function (Micro $app,$di) {
                 'hoja_2'    => []
             );
             while ($row = $result->fetch()) {
-                $row['fecha_pago']  = FuncionesGlobales::formatearFecha($row['fecha_pago']);
+                $row['fecha_hora_pago'] = FuncionesGlobales::formatearFecha($row['fecha_hora_pago']);
 
                 $arr_return['hoja_2'][] = $row;
 
