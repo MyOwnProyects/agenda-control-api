@@ -375,8 +375,9 @@ return function (Micro $app,$di) {
         try{
             //  REPORTE GENERAL DE CITAS EN EL RANGO DE FECHAS
             //  INCLUYE INFORMACION GENERAL DEL PACIENTES Y DE LA CITA
-            $id_locacion    = $request->getQuery('id_locacion');
-            $rango_fechas   = $request->getQuery('rango_fechas') ?? null;
+            $id_locacion            = $request->getQuery('id_locacion');
+            $rango_fechas           = $request->getQuery('rango_fechas') ?? null;
+            $incluir_movtos_futuros = $request->getQuery('incluir_movtos_futuros') ?? null;
 
             if (empty($rango_fechas)){
                 throw new Exception('Rango de fechas vacio');
@@ -433,7 +434,8 @@ return function (Micro $app,$di) {
                     'total_efectivo'        => 0,
                     'total_transferencia'   => 0
                 ],
-                'hoja_2'    => []
+                'hoja_2'    => [],
+                'hoja_3'    => [],
             );
             while ($row = $result->fetch()) {
                 $row['fecha_hora_pago'] = FuncionesGlobales::formatearFecha($row['fecha_hora_pago']);
@@ -444,6 +446,67 @@ return function (Micro $app,$di) {
                 $arr_return['hoja_1']['total_pagos']    = (($arr_return['hoja_1']['total_pagos'] * 100) + ($row['total_pagos'] * 100) ) / 100;
                 $arr_return['hoja_1']['total_efectivo']         = (($arr_return['hoja_1']['total_efectivo'] * 100) + ($row['total_efectivo'] * 100) ) / 100;
                 $arr_return['hoja_1']['total_transferencia']    = (($arr_return['hoja_1']['total_transferencia'] * 100) + ($row['total_transferencia'] * 100) ) / 100;
+            }
+
+            //  DESGLOSE DE ABONOS CON SUS RESPECTIVOS MOVIMIENTOS
+            $phql   = " SELECT  
+                            a.id as id_abono,
+                            a.monto,
+                            a.metodo_pago,
+                            a.fecha_hora_pago,
+                            a.estatus,
+                            a.tipo_cancelacion,
+                            a.fecha_cancelacion
+                        FROM tbabonos a 
+                        LEFT JOIN ctpacientes b ON a.id_paciente = b.id
+                        WHERE a.fecha_hora_pago::DATE BETWEEN :fecha_inicio AND :fecha_termino AND a.tipo_abono = 1 $filtro 
+                        ORDER BY a.fecha_hora_pago;";
+
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result){
+                while($data_abonos = $result->fetch()){
+                    $data_abonos['monto_disponible']    = $data_abonos['monto'];
+
+                    $values_movtos  = array(
+                        'id_abono' => $data_abonos['id_abono']
+                    );
+
+                    //  SE BUSCAN TODOS LOS MOVIMIENTOS DE CADA ABONO
+                    $phql   = " SELECT  
+                                    a.monto,
+                                    a.fecha_hora_pago,
+                                    a.estatus,
+                                    a.tipo_cancelacion,
+                                    a.fecha_cancelacion
+                                FROM tbabonos_movimientos a
+                                WHERE a.id_abono = :id_abono";
+
+                    if (!$incluir_movtos_futuros){
+                        $phql   .= " AND a.fecha_hora_pago::DATE BETWEEN :fecha_inicio AND :fecha_termino ";
+
+                        $values_movtos['fecha_inicio']  = $rango_fechas['fecha_inicio'];
+                        $values_movtos['fecha_termino'] = $rango_fechas['fecha_termino'];
+
+                    }
+
+                    $phql   .= " ORDER BY a.fecha_hora_pago; ";
+
+                    $result_movtos  = $db->query($phql,$values_movtos);
+                    $result_movtos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_movtos){
+                        while($data_movtos = $result_movtos->fetch()){
+                            $data_abonos['info_movtos'][]   = $data_movtos;
+                            if ($data_movtos['estatus'] == 1 || ($data_movtos['estatus'] == 0 && $data_movtos['tipo_cancelacion'] == 2)){
+                                $data_abonos['monto_disponible']    = (($data_abonos['monto_disponible'] * 100) - ($data_movtos['monto'] * 100)) / 100;
+                            }
+                        }
+                    }
+
+                    $arr_return['hoja_3'][] = $data_abonos;
+                }
             }
     
             // Devolver los datos en formato JSON
