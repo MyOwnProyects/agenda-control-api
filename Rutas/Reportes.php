@@ -456,7 +456,8 @@ return function (Micro $app,$di) {
                             a.fecha_hora_pago,
                             a.estatus,
                             a.tipo_cancelacion,
-                            a.fecha_cancelacion
+                            a.fecha_cancelacion,
+                            (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo
                         FROM tbabonos a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         WHERE a.fecha_hora_pago::DATE BETWEEN :fecha_inicio AND :fecha_termino AND a.tipo_abono = 1 $filtro 
@@ -468,6 +469,21 @@ return function (Micro $app,$di) {
             if ($result){
                 while($data_abonos = $result->fetch()){
                     $data_abonos['monto_disponible']    = $data_abonos['monto'];
+                    $data_abonos['fecha_hora_pago']     = FuncionesGlobales::formatearFecha($data_abonos['fecha_hora_pago'],'d/m/Y H:i');
+
+                    $label_estatus_abono    = '';
+
+                    if ($data_abonos['estatus'] == 1){
+                        $label_estatus_abono    = 'ACTIVO';
+                    } else {
+                        if ($data_abonos['tipo_cancelacion'] == 2){
+                            $label_estatus_abono    = 'DEVOLUCIÓN';
+                        } else {
+                            $label_estatus_abono    = 'CANCELADO';
+                        }
+                    }
+
+                    $data_abonos['label_estatus_abono'] = $label_estatus_abono;
 
                     $values_movtos  = array(
                         'id_abono' => $data_abonos['id_abono']
@@ -498,6 +514,23 @@ return function (Micro $app,$di) {
 
                     if ($result_movtos){
                         while($data_movtos = $result_movtos->fetch()){
+                            $data_movtos['fecha_hora_pago'] = FuncionesGlobales::formatearFecha($data_movtos['fecha_hora_pago'],'d/m/Y H:i');
+                            //  ESTATUS MOVTO
+                            //  ACTIVO,DEVOLUCION O CANCELADO
+                            $label_estatus_movto    = '';
+
+                            if ($data_movtos['estatus'] == 1){
+                                $label_estatus_movto    = 'ACTIVO';
+                            } else {
+                                if ($data_movtos['tipo_cancelacion'] == 2){
+                                    $label_estatus_movto    = 'DEVOLUCIÓN';
+                                } else {
+                                    $label_estatus_movto    = 'CANCELADO';
+                                }
+                            }
+
+                            $data_movtos['label_estatus_movto'] = $label_estatus_movto;
+
                             $data_abonos['info_movtos'][]   = $data_movtos;
                             if ($data_movtos['estatus'] == 1 || ($data_movtos['estatus'] == 0 && $data_movtos['tipo_cancelacion'] == 2)){
                                 $data_abonos['monto_disponible']    = (($data_abonos['monto_disponible'] * 100) - ($data_movtos['monto'] * 100)) / 100;
