@@ -641,7 +641,7 @@ return function (Micro $app,$di) {
     
             // Devolver los datos en formato JSON
             $response = new Response();
-            $response->setJsonContent($arr_return);
+            $response->setJsonContent(array('MSG' => 'OK'));
             $response->setStatusCode(200, 'OK');
             return $response;
         }catch (\Exception $e){
