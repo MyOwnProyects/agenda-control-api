@@ -329,9 +329,9 @@ return function (Micro $app,$di) {
                             ) RETURNING id";
     
             $values = [
-                'primer_apellido'       => $primer_apellido,
-                'segundo_apellido'      => $segundo_apellido,
-                'nombre'                => $nombre,
+                'primer_apellido'       => trim($primer_apellido),
+                'segundo_apellido'      => empty($segundo_apellido) ? null : trim($segundo_apellido),
+                'nombre'                => trim($nombre),
                 'celular'               => $celular,
                 'id_locacion_registro'  => $id_locacion_registro,
                 'fecha_nacimiento'      => $fecha_nacimiento
