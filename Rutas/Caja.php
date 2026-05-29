@@ -279,6 +279,39 @@ return function (Micro $app,$di) {
                 throw new Exception('Información de citas a pagar vacias');
             }
 
+            //  SE BUSCAN LAS CITAS DEUDORAS DEL PACIENTE, ORDENADAS DE LA MAS ANTIGUA
+            //  A LA MAS RECIENTE, SE VERIFICARA QUE SI EL PACIENTE PAGARA POR EJEMPLO 
+            //  5 CITAS LOS ID'S DEL QUERY DEBEN DE SER IGUALES A LOS DEL ARRAY
+            //  INCLUIDOS EL ORDEN DE PAGO
+
+            $tmp_id_citas   = array();
+            foreach($obj_citas_saldos as $info_cita){
+                $tmp_id_citas[] = $info_cita['id_agenda_cita'];
+            }
+
+            $phql   = "SELECT id FROM tbagenda_citas 
+                        WHERE id_paciente = :id_paciente AND activa <> 0 AND pagada = 0 
+                        ORDER BY fecha_cita ASC LIMIT :limite_citas";
+            $values = array(
+                'id_paciente'   => $id_paciente,
+                'limite_citas'  => count($obj_citas_saldos)
+            );
+
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result){
+                $num_row    = 0;
+                while($data = $result->fetch()){
+                    if ($tmp_id_citas[$num_row] != $data['id']){
+                        throw new Exception('Verifica la selección de citas. Debes seleccionar las citas pendientes en orden, comenzando por la más antigua.');
+                    } else {
+                        unset($tmp_id_citas[$num_row]);
+                        $num_row    ++;
+                    }
+                }
+            }
+
             if (empty($obj_info_pago) || count($obj_info_pago) == 0){
                 throw new Exception('Información de pagos vacias');
             }
