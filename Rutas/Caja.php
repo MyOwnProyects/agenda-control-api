@@ -291,7 +291,7 @@ return function (Micro $app,$di) {
 
             $phql   = "SELECT id FROM tbagenda_citas 
                         WHERE id_paciente = :id_paciente AND activa <> 0 AND pagada = 0 
-                        ORDER BY fecha_cita ASC LIMIT :limite_citas";
+                        ORDER BY fecha_cita,hora_inicio,hora_termino LIMIT :limite_citas";
             $values = array(
                 'id_paciente'   => $id_paciente,
                 'limite_citas'  => count($obj_citas_saldos)
