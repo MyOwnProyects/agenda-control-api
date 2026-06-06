@@ -376,7 +376,7 @@ return function (Micro $app,$di) {
             }
 
             //  SE OBTIENE EL FOLIO DEL TICKET
-            $phql   = "SELECT * FROM fn_folio_ticket();";
+            $phql   = "SELECT * FROM fn_folio_ticket('pago');";
             $result = $db->query($phql);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
