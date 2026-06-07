@@ -311,7 +311,11 @@ return function (Micro $app,$di) {
         try{
 
             $id             = $request->getQuery('id');
-            $id_paciente    = $request->getQuery('clave');
+            $id_paciente    = $request->getQuery('id_paciente');
+
+            if (!is_numeric($id) && !is_numeric($id_paciente)){
+                throw new Exception ('Ingresa un filtro de busqueda');
+            }
         
             // Definir el query SQL
             $phql   = "SELECT 
@@ -360,13 +364,19 @@ return function (Micro $app,$di) {
         try{
 
             $id             = $request->getQuery('id');
-            $id_paciente    = $request->getQuery('clave');
+            $id_paciente    = $request->getQuery('id_paciente');
         
             // Definir el query SQL
             $phql   = " SELECT 
                             a.*,
                             (b.clave|| ' - ' || b.nombre) as beca,
-                            COALESCE(c.monto_usado,0) as monto_usado
+                            COALESCE(c.monto_usado,0) as monto_usado,
+                            b.tipo_beca,
+                            (a.monto_asignado - c.monto_usado) as monto_disponible,
+                            e.detalle,
+                            e.folio,
+                            (f.primer_apellido|| ' ' ||COALESCE(f.segundo_apellido,'')||' '||f.nombre) as nombre_completo,
+                            (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as nombre_usuario
                         FROM tbpaciente_becas a 
                         LEFT JOIN ctbecas b ON a.id_beca = b.id
                         LEFT JOIN LATERAL (
@@ -376,6 +386,10 @@ return function (Micro $app,$di) {
                             WHERE a.id = t2.id_paciente_beca 
                             AND (t1.estatus = 1 OR (t1.estatus = 0 AND t1.tipo_cancelacion = 2))
                         ) c ON TRUE
+                        LEFT JOIN tbabonos d ON a.id = d.id_paciente_beca
+                        LEFT JOIN tbtickets_pagos e ON d.ticket_folio = e.folio
+                        LEFT JOIN ctpacientes f ON a.id_paciente = f.id
+                        LEFT JOIN ctusuarios g ON a.id_usuario_captura = d.id
                         WHERE 1 = 1 ";
             $values = array();
     
@@ -404,7 +418,9 @@ return function (Micro $app,$di) {
             while ($row = $result->fetch()) {
                 $row['label_estatus']           = $row['estatus'] == 1 ? 'ACTIVA' : 'INACTIVA';
                 $row['label_tipo_beca']         = $row['tipo_beca'] == 1 ? 'IMPORTE' : 'PORCENTAJE';
-                $row_['label_fecha_captura']    = FuncionesGlobales::formatearFecha($row['label_fecha_captura'],'d/m/Y H:i');
+                $row['label_fecha_captura']     = FuncionesGlobales::formatearFecha($row['fecha_captura'],'d/m/Y H:i');
+                $row['label_monto_asignado']    = '$'.FuncionesGlobales::formatearDecimal($row['monto_asignado']);
+                $row['label_monto_disponible']  = '$'.FuncionesGlobales::formatearDecimal($row['monto_disponible']);
                 $data[]                         = $row;
             }
     
@@ -657,14 +673,15 @@ return function (Micro $app,$di) {
                 $total_monto    = (($total_monto * 100) + ($monto * 100)) / 100;
 
                 //  SE CREA EL ABONO
-                $phql   = " INSERT INTO tbabonos (id_paciente,monto,tipo_abono,metodo_pago,id_usuario_captura,ticket_folio,fecha_hora_pago,referencia)
-                        VALUES (:id_paciente,:monto,:tipo_abono,:metodo_pago,:id_usuario_captura,:ticket_folio,:fecha_hora_pago,:referencia) RETURNING *";
+                $phql   = " INSERT INTO tbabonos (id_paciente,monto,tipo_abono,metodo_pago,id_paciente_beca,id_usuario_captura,ticket_folio,fecha_hora_pago,referencia)
+                        VALUES (:id_paciente,:monto,:tipo_abono,:metodo_pago,:id_paciente_beca,:id_usuario_captura,:ticket_folio,:fecha_hora_pago,:referencia) RETURNING *";
                 
                 $values = array(
                     'id_paciente'   => $id_paciente,
                     'monto'         => $monto,
                     'tipo_abono'    => 2,
-                    'metodo_pago'   => $metodo_pago['label_table'],
+                    'id_paciente_beca'      => $id_paciente_beca,
+                    'metodo_pago'           => $metodo_pago['label_table'],
                     'id_usuario_captura'    => $id_usuario_solicitud,
                     'ticket_folio'          => $folio_generado,
                     'fecha_hora_pago'       => $fecha_hora_transferencia == '' || $fecha_hora_transferencia == null ? 'now()' : $fecha_hora_transferencia,

@@ -37,8 +37,10 @@ return function (Micro $app,$di) {
             );
 
             $arr_return = array(
-                'citas'         => [],
-                'saldo_favor'   => 0
+                'citas'             => [],
+                'saldo_favor'       => 0,
+                'info_saldo_favor_beca'     => array(),
+                'total_saldo_favor_beca'    => 0
             );
 
             //  SE BUSCA EL SALDO A FAVOR DEL PACIENTE
@@ -51,6 +53,46 @@ return function (Micro $app,$di) {
             if ($result){
                 while($data = $result->fetch()){
                     $arr_return['saldo_favor']  = $data['fn_saldo_favor_paciente'];
+                }
+            }
+
+            //  SE BUSCA EL SALDO A FAVOR DE CADA BECA Y SUS RESPECTIVAS CITAS A EXCLUIR
+            $phql   = " SELECT 
+                            a.id AS id_abono,
+                            a.id_paciente_beca,
+                            (a.monto - b.monto_usado) as saldo_disponible 
+                        FROM tbabonos a 
+                        LEFT JOIN LATERAL (
+                            SELECT SUM(t1.monto) AS monto_usado 
+                            FROM tbabonos_movimientos t1
+                            WHERE a.id = t1.id_abono
+                            AND (t1.estatus = 1 OR (t1.estatus = 0 AND t1.tipo_cancelacion = 2))
+                        ) b ON TRUE
+                        WHERE a.id_paciente = :id_paciente AND a.tipo_abono = 2 AND (a.monto - b.monto_usado) > 0";
+
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result){
+                while($data = $result->fetch()){
+                    //  SE BUSCA SI EN LA APLICACION DE BECA SE EXCLUYERON CITAS
+                    $phql   = "SELECT * FROM tbpaciente_becas_citas_excluidas WHERE id_paciente_beca = :id_paciente_beca";
+
+                    $result_excluidas   = $db->query($phql,array(
+                        'id_paciente_beca'   => $data['id_paciente_beca']
+                    ));
+                    $result_excluidas->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_excluidas){
+                        while($data_excluidas = $result_excluidas->fetch()){
+                            $data['citas_excluidas'][]  = $data_excluidas;
+                        }
+                    }
+
+                    $arr_return['saldo_favor_beca'][]       = $data;
+                    $arr_return['total_saldo_favor_beca']   = (($arr_return['total_saldo_favor_beca'] * 100) + ($data['saldo_disponible'] * 100)) / 100;
                 }
             }
 
@@ -768,10 +810,15 @@ return function (Micro $app,$di) {
             $phql   = " SELECT  
                             a.*,
                             (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
-                            (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) as nombre_usuario
+                            (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) as nombre_usuario,
+                            (CASE WHEN d.id IS NOT NULL THEN (f.clave||' - '||f.nombre) ELSE null END) as nombre_beca
                         FROM tbtickets_pagos a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
                         LEFT JOIN ctusuarios c ON a.id_usuario_captura = c.id
+                        --      PARA OBTENER LA INFORMACION DE LA BECA
+                        LEFT JOIN tbabonos d ON a.folio = d.ticket_folio AND d.id_paciente_beca IS NOT NULL
+                        LEFT JOIN tbpaciente_becas e ON d.id_paciente_beca = e.id
+                        LEFT JOIN ctbecas f ON e.id_beca = f.id
                         WHERE 1 = 1 ";
             $values = array();
 
