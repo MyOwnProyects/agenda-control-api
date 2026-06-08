@@ -39,8 +39,7 @@ return function (Micro $app,$di) {
             $arr_return = array(
                 'citas'             => [],
                 'saldo_favor'       => 0,
-                'info_saldo_favor_beca'     => array(),
-                'total_saldo_favor_beca'    => 0
+                'saldo_favor_beca'  => array()
             );
 
             //  SE BUSCA EL SALDO A FAVOR DEL PACIENTE
@@ -58,9 +57,7 @@ return function (Micro $app,$di) {
 
             //  SE BUSCA EL SALDO A FAVOR DE CADA BECA Y SUS RESPECTIVAS CITAS A EXCLUIR
             $phql   = " SELECT 
-                            a.id AS id_abono,
-                            a.id_paciente_beca,
-                            (a.monto - b.monto_usado) as saldo_disponible 
+                            SUM((a.monto - b.monto_usado)) as total_disponible
                         FROM tbabonos a 
                         LEFT JOIN LATERAL (
                             SELECT SUM(t1.monto) AS monto_usado 
@@ -68,7 +65,7 @@ return function (Micro $app,$di) {
                             WHERE a.id = t1.id_abono
                             AND (t1.estatus = 1 OR (t1.estatus = 0 AND t1.tipo_cancelacion = 2))
                         ) b ON TRUE
-                        WHERE a.id_paciente = :id_paciente AND a.tipo_abono = 2 AND (a.monto - b.monto_usado) > 0";
+                        WHERE a.id_paciente = :id_paciente AND a.tipo_abono = 2";
 
             $result = $db->query($phql,array(
                 'id_paciente'   => $id_paciente
@@ -78,21 +75,7 @@ return function (Micro $app,$di) {
             if ($result){
                 while($data = $result->fetch()){
                     //  SE BUSCA SI EN LA APLICACION DE BECA SE EXCLUYERON CITAS
-                    $phql   = "SELECT * FROM tbpaciente_becas_citas_excluidas WHERE id_paciente_beca = :id_paciente_beca";
-
-                    $result_excluidas   = $db->query($phql,array(
-                        'id_paciente_beca'   => $data['id_paciente_beca']
-                    ));
-                    $result_excluidas->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
-
-                    if ($result_excluidas){
-                        while($data_excluidas = $result_excluidas->fetch()){
-                            $data['citas_excluidas'][]  = $data_excluidas;
-                        }
-                    }
-
-                    $arr_return['saldo_favor_beca'][]       = $data;
-                    $arr_return['total_saldo_favor_beca']   = (($arr_return['total_saldo_favor_beca'] * 100) + ($data['saldo_disponible'] * 100)) / 100;
+                    $arr_return['saldo_favor_beca'] = $data['total_disponible'];
                 }
             }
 
