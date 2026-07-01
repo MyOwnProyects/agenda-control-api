@@ -218,8 +218,10 @@ return function (Micro $app,$di) {
             // Recorrer los resultados
             $data = [];
             while ($row = $result->fetch()) {
-                $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
-                $row['diagnosticos']    = array();
+                $row['label_estatus']           = $row['estatus'] == 1 ? 'ACTIVO' : 'INACTIVO';
+                $row['label_fecha_nacimiento']  = FuncionesGlobales::formatearFecha($row['fecha_nacimiento']);
+                $row['label_fecha_registro']    = FuncionesGlobales::formatearFecha($row['fecha_registro']);
+                $row['diagnosticos']            = array();
                 if (!empty($get_diagnoses)){
                     $phql   = " SELECT a.presento_evidencia,b.* FROM tbpacientes_diagnosticos a
                                 LEFT JOIN cttranstornos_neurodesarrollo b ON a.id_transtorno = b.id
@@ -288,6 +290,10 @@ return function (Micro $app,$di) {
             if (!FuncionesGlobales::validarTelefono($celular)){
                 throw new Exception('Parámetro "Celular" invalido');
             }
+
+            if (empty($fecha_nacimiento)) {
+                $fecha_nacimiento   = null;
+            }
     
             // VERIFICAR QUE LA CLAVE NO ESTÉ REPETIDA
             $phql = "SELECT * FROM ctpacientes a
@@ -316,7 +322,8 @@ return function (Micro $app,$di) {
                                     nombre,
                                     celular,
                                     id_locacion_registro,
-                                    fecha_nacimiento
+                                    fecha_nacimiento,
+                                    fecha_registro
                                 ) 
                      VALUES (
                                 (select fn_crear_clave_paciente()), 
@@ -325,7 +332,8 @@ return function (Micro $app,$di) {
                                 :nombre,
                                 :celular,
                                 :id_locacion_registro,
-                                :fecha_nacimiento
+                                :fecha_nacimiento,
+                                current_date
                             ) RETURNING id";
     
             $values = [
@@ -382,6 +390,7 @@ return function (Micro $app,$di) {
             $genero             = $request->getPost('genero') ?? null;
             $correo_electronico = $request->getPost('correo_electronico') ?? null;
             $direccion          = $request->getPost('direccion') ?? null;
+            $fecha_registro     = $request->getPost('fecha_registro') ?? null;
     
             //  VERIFICACION DE PARAMETROS
 
@@ -399,6 +408,14 @@ return function (Micro $app,$di) {
 
             if (empty($celular)) {
                 throw new Exception('Par&aacute;metro "Celular" vac&iacute;o');
+            }
+
+            if (empty($fecha_nacimiento)) {
+                $fecha_nacimiento   = null;
+            }
+
+            if (empty($fecha_registro)) {
+                $fecha_registro = null;
             }
 
             if (!FuncionesGlobales::validarTelefono($celular)){
@@ -438,7 +455,8 @@ return function (Micro $app,$di) {
                         fecha_nacimiento = :fecha_nacimiento,
                         genero = :genero,
                         correo_electronico = :correo_electronico,
-                        direccion = :direccion
+                        direccion = :direccion,
+                        fecha_registro = :fecha_registro
                     WHERE id = :id";
     
             $values = [
@@ -450,6 +468,7 @@ return function (Micro $app,$di) {
                 'genero'            => $genero,
                 'correo_electronico'    => $correo_electronico,
                 'direccion'             => $direccion,
+                'fecha_registro'        => $fecha_registro,
                 'id'                    => $id            
             ];
     
