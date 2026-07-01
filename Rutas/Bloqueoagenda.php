@@ -221,6 +221,7 @@ return function (Micro $app,$di) {
             $usuario_solicitud          = $request->getPost('usuario_solicitud');
             //  INDICA EL NUEVO ESTATUS DE LAS CITAS: PENDIENTE O CANCELAR
             $tipo_movimiento            = $request->getPost('tipo_movimiento') ?? null;
+            $tipo_accion_pagos          = $request->getPost('tipo_accion_pagos') ?? null;
             $id_usuario_captura         = null;
 
             if (empty($accion)){
@@ -402,6 +403,24 @@ return function (Micro $app,$di) {
                 $tipo_movimiento    = 2;
             } else {
                 $tipo_movimiento    = 0;
+
+                if ($tipo_accion_pagos == 'reasignar'){
+                    //  SE EJECUTA EL QUERY PARA OBTENER LOS PACIENTES AFECTADOS
+                    $phql   = " SELECT DISTINCT id_paciente FROM tbagenda_citas 
+                                WHERE (fecha_cita BETWEEN :fecha_inicio AND :fecha_termino)
+                                        AND activa = 1";
+                    $values = array(
+                        'fecha_inicio'  => $fecha_inicio,
+                        'fecha_termino' => $fecha_termino
+                    );
+
+                    $result = $db->query($phql, $values);
+                    $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+            
+                    while ($row = $result->fetch()) {
+                        $arr_pacientes_saldo_favor[]    = $row['id_paciente']; 
+                    }
+                }
             }
             $phql   = " UPDATE tbagenda_citas SET 
                             activa = :tipo_movimiento,
@@ -432,6 +451,13 @@ return function (Micro $app,$di) {
             }
 
             $result = $conexion->execute($phql, $values);
+
+            //  SE APLICARA EL SALDO A FAVOR A LOS PACIENTES EN LISTA
+            if ($tipo_movimiento == 0 && count($arr_pacientes_saldo_favor) > 0 && $tipo_accion_pagos == 'reasignar'){
+                foreach($arr_pacientes_saldo_favor as $id_paciente){
+                    FuncionesGlobales::AplicarSaldoFavor($conexion,$id_paciente,$id_usuario_solicitud);
+                }
+            }
             
             $conexion->commit();
     

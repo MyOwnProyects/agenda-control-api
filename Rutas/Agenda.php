@@ -445,15 +445,25 @@ return function (Micro $app,$di) {
         }
     });
 
-    $app->post('/tbapertura_agenda/save', function () use ($app,$db,$request) {        
+    $app->post('/tbapertura_agenda/save', function () use ($app,$db,$request) { 
+        $conexion   = $db;   
         try{
+
+            $conexion->begin();
 
             $id_locacion    = $request->getPost('id_locacion') ?? null;
             $id_paciente    = $request->getPost('id_paciente') ?? null;
             $fecha_inicio   = $request->getPost('fecha_inicio') ?? null;
             $fecha_termino  = $request->getPost('fecha_termino') ?? null;
             $clave_usuario  = $request->getPost('usuario_solicitud') ?? null;
+            $aplicar_saldo_favor    = $request->getPost('aplicar_saldo_favor') ?? null;
+            $usuario_solicitud      = $request->getPost('usuario_solicitud');
             $return_mensaje = 'OK';
+
+            //  SI ES APERTURA DE AGENDA DEBE DE ESPECIFICAR QUE PASARA CON EL SALDO A FAVOR
+            if ($aplicar_saldo_favor == null && !is_numeric($id_paciente)){
+                throw new Exception('Especifique que acción se tomará sobre el saldo a favor de los pacientes');
+            }
 
             try{
                 //  SE AGENDAN LAS CITAS DEL PACIENTE
@@ -466,7 +476,7 @@ return function (Micro $app,$di) {
                     'clave_usuario' => $clave_usuario
                 );
 
-                $result = $db->query($phql,$values);
+                $result = $conexion->query($phql,$values);
                 $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
 
                 if ($result){
@@ -477,6 +487,50 @@ return function (Micro $app,$di) {
             }catch(\Exception $err){
                 throw new \Exception(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
             }
+
+            //  SE BUSCA EL ID DEL USUARIO
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
+            }
+
+            //  SE APLICARA EL SALDO A FAVOR A LOS PACIENTES EN LISTA
+            if ($aplicar_saldo_favor == 1 || is_numeric($id_paciente)){
+
+                $arr_pacientes_saldo_favor  = array();
+
+                if (!is_numeric($id_paciente)){
+                    //  SE BUSCA EL ID DE LOS PACIENTES A LOS QUE SE LES GENERO UN HORARIO
+                    $phql   = "SELECT a.id_paciente
+                                FROM tbcitas_programadas a 
+                                LEFT JOIN ctpacientes b  ON a.id_paciente = b.id 
+                                WHERE b.estatus = 1 AND a.id_locacion = :id_locacion;";
+
+                    $result = $db->query($phql,array('id_locacion' => $id_locacion));
+                    $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result){
+                        while($data = $result->fetch()){
+                            $arr_pacientes_saldo_favor[]    = $data['id_paciente'];
+                        }
+                    }
+                } else {
+                    $arr_pacientes_saldo_favor[]    = $id_paciente;
+                }
+
+                foreach($arr_pacientes_saldo_favor as $id_paciente){
+                    FuncionesGlobales::AplicarSaldoFavor($conexion,$id_paciente,$id_usuario_solicitud);
+                }
+            }
+
+            $conexion->commit();
+            //$conexion->rollback();
     
             // RESPUESTA JSON
             $response = new Response();
@@ -485,6 +539,7 @@ return function (Micro $app,$di) {
             return $response;
 
         }catch (\Exception $e){
+            $conexion->rollback();
             // Devolver los datos en formato JSON
             $response = new Response();
             $response->setJsonContent($e->getMessage());
@@ -505,6 +560,7 @@ return function (Micro $app,$di) {
             $tipo_movimiento            = $request->getPost('tipo_movimiento');
             $arr_id_agenda_cita         = $request->getPost('arr_id_agenda_cita') ?? array();
             $tipo_accion_cita_simultanea    = $request->getPost('tipo_accion_cita_simultanea') ?? null;
+            $tipo_accion_pagos              = $request->getPost('tipo_accion_pagos') ?? null;
 
             if (!empty($id_agenda_cita)){
                 $arr_id_agenda_cita = array($id_agenda_cita);
@@ -529,6 +585,9 @@ return function (Micro $app,$di) {
             if ($id_usuario_solicitud == null){
                 throw new Exception('Usuario inexistente en el catalogo');
             }
+
+            //  ARRAY DE CITAS PACIENTES A UTILIZAR SALDO A FAVOR SI LA OPCION ES CANCELAR
+            $arr_pacientes_saldo_favor  = array();
 
             //  SE VERIFICA QUE LA CITA SE ENCUENTRE ACTIVA
             foreach($arr_id_agenda_cita as $id_agenda_cita){
@@ -565,6 +624,9 @@ return function (Micro $app,$di) {
                 // 1 CITA ACTIVA Y DISPONIBLE
                 // 0 CITA CANCELADA
                 // 2 CITA PENDIENTE DE AGENDAR
+                if ($tipo_movimiento == 'cancelar' && !in_array($arr_cita_verificar['id_paciente'],$arr_pacientes_saldo_favor)){
+                    $arr_pacientes_saldo_favor[]    = $arr_cita_verificar['id_paciente'];                   
+                }
                 
                 $activa = $tipo_movimiento == 'cancelar' ? 0 : 2;
 
@@ -608,6 +670,23 @@ return function (Micro $app,$di) {
                         }
 
                         if ($data['citas_simultaneas'] > 0 && $tipo_accion_cita_simultanea == 'todas'){
+
+                            if ($tipo_movimiento == 'cancelar'){
+                                $phql               = "SELECT DISTINCT id_paciente FROM tbagenda_citas WHERE id_cita_simultanea = :id_cita_simultanea AND activa = 1";
+                                $result_pacientes   = $conexion->query($phql, array(
+                                    'id_cita_simultanea'    => $id_agenda_cita
+                                ));
+                                $result_pacientes->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                                if ($result_pacientes){
+                                    while($data_pacientes = $result_pacientes->fetch()){
+                                        if (in_array($data_pacientes['id_paciente'],$arr_pacientes_saldo_favor)){
+                                            $arr_pacientes_saldo_favor[]    = $arr_cita_verificar['id_paciente'];                   
+                                        }
+                                    }
+                                }
+                            }
+
                             //  SE REALIZA EL MISMO MOVIMIENTO A TODAS LAS CITAS SIMULTANEAS
                             //  Y ESTAS CITAS PASAN A SER CITAS INDIVIDUALES
                             $phql   = " UPDATE tbagenda_citas SET 
@@ -677,6 +756,13 @@ return function (Micro $app,$di) {
                             ));
                         }
                     }
+                }
+            }
+
+            //  SE APLICARA EL SALDO A FAVOR A LOS PACIENTES EN LISTA
+            if ($tipo_movimiento == 'cancelar' && count($arr_pacientes_saldo_favor) > 0 && $tipo_accion_pagos == 'reasignar'){
+                foreach($arr_pacientes_saldo_favor as $id_paciente){
+                    FuncionesGlobales::AplicarSaldoFavor($conexion,$id_paciente,$id_usuario_solicitud);
                 }
             }
             
@@ -1302,7 +1388,7 @@ return function (Micro $app,$di) {
             }
 
             //  SE UPDATEA EL COSTO TOTAL
-            $phql   = "UPDATE tbagenda_citas SET total = :calcula_total WHERE id = :id_agenda_cita";
+            $phql   = "UPDATE tbagenda_citas SET total = :calcula_total::numeric, pagada = (CASE WHEN :calcula_total::numeric = 0 THEN 1 ELSE 0 END) WHERE id = :id_agenda_cita";
             $conexion->execute($phql,array(
                 'calcula_total'     => $calcula_total,
                 'id_agenda_cita'    => $id_agenda_cita
