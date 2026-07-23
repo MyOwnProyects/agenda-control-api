@@ -641,6 +641,21 @@ return function (Micro $app,$di) {
                 $id_servicio    = $info_cita['id_servicio'];
                 $id_cita_programada_servicio    = null;
 
+                //  SE VERIFICA QUE EL PROFESIONAL ESTE ACTIVO
+                $phql   = "SELECT * FROM ctprofesionales WHERE id = :id";
+                $result = $conexion->query($phql, array(
+                    'id'    => $id_profesional
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                if ($result){
+                    while($data = $result->fetch()){
+                        if ($data['estatus'] != 1){
+                            throw new Exception('No se puede agendar la cita indicada ya que el profesional '.$data['primer_apellido'].' '.$data['nombre'].' esta marcada como inactivo');
+                        }
+                    }
+                }
+
                 //  SE BUSCA SI EXISTE EL REGISTRO DE CLASE
                 $phql   = "SELECT * FROM tbcitas_programadas_servicios 
                             WHERE id_cita_programada = :id_cita_programada AND id_servicio = :id_servicio AND id_profesional = :id_profesional LIMIT 1";
