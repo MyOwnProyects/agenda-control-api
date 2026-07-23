@@ -882,6 +882,21 @@ return function (Micro $app,$di) {
                 throw new Exception('Identificador de Profesional vacio o no valido');
             }
 
+            //  SE VERIFICA QUE EL PROFESIONAL ESTE ACTIVO
+            $phql   = "SELECT * FROM ctprofesionales WHERE id = :id";
+            $result = $db->query($phql, array(
+                'id'    => $id_profesional
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result){
+                while($data = $result->fetch()){
+                    if ($data['estatus'] != 1){
+                        throw new Exception('No se puede agendar la cita indicada ya que el profesional '.$data['primer_apellido'].' '.$data['nombre'].' esta marcada como inactivo');
+                    }
+                }
+            }
+
             if (empty($id_locacion) || !is_numeric($id_locacion)){
                 throw new Exception('Identificador de locacion vacio o no valido');
             }
