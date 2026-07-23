@@ -114,7 +114,8 @@ BEGIN
             LEFT JOIN tbcitas_programadas c ON b.id_cita_programada = c.id 
             LEFT JOIN ctpacientes d ON c.id_paciente = d.id
             LEFT JOIN ctlocaciones_servicios e ON b.id_servicio = e.id_servicio AND e.id_locacion = p_id_locacion
-            WHERE d.estatus = 1 AND a.dia = i AND e.id IS NOT NULL AND c.id_paciente = ANY (arr_id_paciente)
+            LEFT JOIN ctprofesionales f ON b.id_profesional = f.id
+            WHERE d.estatus = 1 AND f.estatus = 1 AND a.dia = i AND e.id IS NOT NULL AND c.id_paciente = ANY (arr_id_paciente)
             ORDER BY c.id_paciente
             --  e.id is not null para asegurarnos que el servicio se sigue dando en la locacion
             --  de lo contrario ay no se generara la cita
