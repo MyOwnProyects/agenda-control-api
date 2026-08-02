@@ -19,6 +19,7 @@ return function (Micro $app,$di) {
             $id_servicio    = $request->getQuery('id_servicio');
             $id_locacion    = $request->getQuery('id_locacion') ?? null;
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            $estatus            = $request->getQuery('estatus') ?? null;
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -66,6 +67,11 @@ return function (Micro $app,$di) {
                 $values['id_locacion']  = $id_locacion;
             }
 
+            if (!empty($estatus)){
+                $phql               .= " AND a.estatus = :estatus";
+                $values['estatus']  = $estatus;
+            }
+
             $phql   .= " AND EXISTS (
                 SELECT 1 FROM ctprofesionales_locaciones_servicios t1
                 LEFT JOIN ctusuarios_locaciones t2 ON t1.id_locacion = t2.id_locacion 
@@ -108,6 +114,7 @@ return function (Micro $app,$di) {
             $id_servicio    = $request->getQuery('id_servicio');
             $id_locacion    = $request->getQuery('id_locacion') ?? null;
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            $estatus            = $request->getQuery('estatus') ?? null;
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -157,6 +164,11 @@ return function (Micro $app,$di) {
                             )";
 
                 $values['id_locacion']  = $id_locacion;
+            }
+
+            if (!empty($estatus)){
+                $phql               .= " AND a.estatus = :estatus";
+                $values['estatus']  = $estatus;
             }
 
             $phql   .= " AND EXISTS (
@@ -682,6 +694,7 @@ return function (Micro $app,$di) {
             //  A LOS USUARIOS SIN UN TIPO
             $id             = $request->getPost('id');
             $estatus        = '';
+            $last_estatus   = $request->getPost('estatus');
             $flag_exists    = false;
 
             $phql   = "SELECT * FROM ctprofesionales WHERE id = :id";
@@ -694,6 +707,10 @@ return function (Micro $app,$di) {
 
             if ($estatus == ''){
                 throw new Exception("Registro inexistente en el catalogo");
+            }
+
+            if ($estatus != $last_estatus){
+                throw new Exception("El estatus actual del profesional a cambiado, refresca la vista para verificar esta información");
             }
 
             $estatus = $estatus == 1 ? 0 : 1;

@@ -31,6 +31,23 @@ class BlacklistService
     }
 
     /**
+     * Verificar si el usuario esta inactivo
+     */
+    public function isInactiveUser($clave_usuario)
+    {
+        try {
+            $sql = "SELECT COUNT(*) as count FROM ctusuarios WHERE clave = :clave AND estatus = 0";
+            $result = $this->db->query($sql, ['clave' => $clave_usuario]);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+            $row = $result->fetch();
+            
+            return $row['count'] > 0;
+        } catch (Exception $e) {
+            return false;
+        }
+    }
+
+    /**
      * Agregar token a lista negra
      */
     public function addToBlacklist($jti, $userId, $tokenType, $expiresAt, $reason = null, $ipAddress = null)
