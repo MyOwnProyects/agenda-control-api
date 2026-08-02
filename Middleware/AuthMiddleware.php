@@ -43,6 +43,10 @@ class AuthMiddleware
             if ($blacklistService->isBlacklisted($payload['jti'])) {
                 return $this->unauthorized($app, 'Token revocado');
             }
+
+            if ($blacklistService->isInactiveUser($_GET['usuario_solicitud'])) {
+                return $this->unauthorized($app, 'Token revocado');
+            }
             
             // Guardar usuario autenticado en DI
             $app->getDI()->setShared('authenticatedUser', function() use ($payload) {
