@@ -841,4 +841,208 @@ return function (Micro $app,$di) {
             return $response;
         }
     });
+
+    $app->get('/ctprofesionales/get_horario_fijo', function () use ($app, $db,$request) {
+        
+        try{
+            
+            $id_profesional = $request->getQuery('id_profesional');
+            $arr_return     = array();
+
+            $arr_dias   = array(
+                1   => 'Lunes',
+                2   => 'Martes',
+                3   => 'Miercoles',
+                4   => 'Jueves',
+                5   => 'Viernes',
+                6   => 'Sabado',
+                7   => 'Domingo'
+            );
+
+            $phql   = " SELECT  
+                            a.id as id_cita_programada,
+                            a.id_locacion,
+                            a.id_paciente,
+                            b.id_profesional,
+                            d.nombre as nombre_locacion,
+                            (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as nombre_paciente,
+                            f.clave as clave_servicio,
+                            f.codigo_color,
+                            c.dia,
+                            TO_CHAR(c.hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(c.hora_termino, 'HH24:MI') AS hora_termino,
+                            b.id_servicio,
+                            c.id as id_cita_programada_servicio_horario,
+                            (e.primer_apellido|| ' ' ||COALESCE(e.segundo_apellido,'')||' '||e.nombre) as nombre_profesional
+                        FROM tbcitas_programadas a 
+                        LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
+                        LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
+                        LEFT JOIN ctlocaciones d ON a.id_locacion = d.id
+                        LEFT JOIN ctprofesionales e ON b.id_profesional = e.id
+                        LEFT JOIN ctservicios f ON b.id_servicio = f.id
+                        LEFT JOIN ctpacientes g ON a.id_paciente = g.id
+
+                        WHERE b.id_profesional = :id_profesional AND b.id IS NOT NULL
+                        ORDER BY c.dia,c.hora_inicio, e.primer_apellido,e.segundo_apellido,e.nombre ";
+            $result = $db->query($phql,array('id_profesional' => $id_profesional));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    $data['label_dia']  = $arr_dias[$data['dia']];
+                    $arr_return[]       = $data;
+                }
+            }
+
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->get('/ctprofesionales/verificar_disponibilidad', function () use ($app, $db,$request) {
+        
+        //  SE EJECUTA FUNCION PARA VALIDAR EMPALMADOS
+        $conexion   = $db;
+        try{
+
+            $conexion->begin();
+
+            $arr_dias   = array(
+                1   => 'Lunes',
+                2   => 'Martes',
+                3   => 'Miercoles',
+                4   => 'Jueves',
+                5   => 'Viernes',
+                6   => 'Sabado',
+                7   => 'Domingo'
+            );
+
+            $id_profesional = $request->getQuery('id_profesional');
+            $id_paciente    = null;
+            $dia            = null;
+            $label_dia      = null;
+            $hora_inicio    = null;
+            $hora_termino   = null;
+            $id_cita_programada_servicio_horario = $request->getQuery('id_cita_programada_servicio_horario');
+
+
+            //  OBTENCION DE INFORMACION DE LA CITA PROGRAMADA
+            $phql   = " SELECT  
+                            a.id_paciente,
+                            c.hora_inicio,
+                            c.hora_termino,
+                            c.dia
+                        FROM tbcitas_programadas a 
+                        LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
+                        LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
+                        WHERE c.id = :id_cita_programada_servicio_horario";
+            $values = array(
+                'id_cita_programada_servicio_horario'   => $id_cita_programada_servicio_horario
+            );
+
+            $result = $conexion->query($phql, $values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            $flag_create    = false;
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    $id_paciente    = $data['id_paciente'];
+                    $dia            = $data['dia'];
+                    $hora_inicio    = $data['hora_inicio'];
+                    $hora_termino   = $data['hora_termino'];
+                }
+            }
+
+            //  DELETE PARA EVITAR MOSTRAR EMPALADO
+            $phql   = "DELETE FROM tbcitas_programadas_servicios_horarios WHERE id = :id ";
+            $result = $conexion->query($phql, array('id' => $id_cita_programada_servicio_horario));
+
+            $phql   = "SELECT * FROM fn_validar_citas_programadas(:id_profesional, :id_paciente, :dia,:label_dia, :hora_inicio, :hora_termino)";
+            $values = array(
+                'id_profesional'    => $id_profesional,
+                'id_paciente'       => $id_paciente,
+                'dia'               => $dia,
+                'label_dia'         => $arr_dias[$dia],
+                'hora_inicio'       => $hora_inicio,
+                'hora_termino'      => $hora_termino
+            );
+
+            $result_horario = $conexion->query($phql, $values);
+            $result_horario->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            $flag_create    = false;
+            if ($result_horario) {
+                while ($data_horario = $result_horario->fetch()) {
+                    $flag_create    = true;
+                }
+            }
+
+            $conexion->rollback();
+            return json_encode(array('RESULTADO' => $flag_create));         
+        }catch(\Exception $err){
+            $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->post('/ctprofesionales/update_horario_fijo', function () use ($app, $db,$request) {
+        
+        try{
+
+            $arr_dias   = array(
+                1   => 'Lunes',
+                2   => 'Martes',
+                3   => 'Miercoles',
+                4   => 'Jueves',
+                5   => 'Viernes',
+                6   => 'Sabado',
+                7   => 'Domingo'
+            );
+
+            $id_profesional = $request->getPost('id_profesional');
+            $id_cita_programada_servicio_horario    = $request->getPost('id_cita_programada_servicio_horario');
+            $id_cita_programada_servicio            = null;
+
+            $phql   = " SELECT 
+                            id_cita_programada_servicio 
+                        FROM tbcitas_programadas_servicios_horarios a 
+                        WHERE id = :id";
+
+            $result = $db->query($phql, array('id' => $id_cita_programada_servicio_horario));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            $flag_create    = false;
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    $id_cita_programada_servicio    = $data['id_cita_programada_servicio'];
+                }
+            }
+
+            $phql   = "UPDATE tbcitas_programadas_servicios SET id_profesional = :id_profesional WHERE id = :id_cita_programada_servicio";
+            $result = $db->execute($phql, array(
+                'id_cita_programada_servicio'   => $id_cita_programada_servicio,
+                'id_profesional'                => $id_profesional
+            ));
+
+            return json_encode(array('MSG' => 'OK'));         
+        }catch(\Exception $err){
+            $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
 };
