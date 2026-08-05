@@ -873,7 +873,13 @@ return function (Micro $app,$di) {
                             TO_CHAR(c.hora_termino, 'HH24:MI') AS hora_termino,
                             b.id_servicio,
                             c.id as id_cita_programada_servicio_horario,
-                            (e.primer_apellido|| ' ' ||COALESCE(e.segundo_apellido,'')||' '||e.nombre) as nombre_profesional
+                            (e.primer_apellido|| ' ' ||COALESCE(e.segundo_apellido,'')||' '||e.nombre) as nombre_profesional,
+                            CASE 
+                                WHEN g.fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, g.fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, g.fecha_nacimiento))::text, 2, '0')
+                                ELSE NULL
+                            END AS edad_actual
                         FROM tbcitas_programadas a 
                         LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
                         LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
@@ -889,7 +895,9 @@ return function (Micro $app,$di) {
     
             if ($result) {
                 while ($data = $result->fetch()) {
-                    $data['label_dia']  = $arr_dias[$data['dia']];
+                    $edad_actual                = $data['edad_actual'] != null ? '('.$data['edad_actual'].')' : '(S/A)';
+                    $data['label_dia']          = $arr_dias[$data['dia']];
+                    $data['nombre_paciente']    = $data['nombre_paciente'].' '.$edad_actual;
                     $arr_return[]       = $data;
                 }
             }
@@ -1041,6 +1049,94 @@ return function (Micro $app,$di) {
             $conexion->rollback();
             $response = new Response();
             $response->setJsonContent(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->get('/ctprofesionales/get_pacientes_asignados', function () use ($app, $db,$request) {
+        
+        try{
+            
+            $id_profesional = $request->getQuery('id_profesional');
+            $arr_return     = array();
+
+            $arr_dias   = array(
+                1   => 'Lunes',
+                2   => 'Martes',
+                3   => 'Miercoles',
+                4   => 'Jueves',
+                5   => 'Viernes',
+                6   => 'Sabado',
+                7   => 'Domingo'
+            );
+
+            $phql   = " SELECT  
+                            a.id as id_cita_programada,
+                            a.id_locacion,
+                            g.clave as clave_paciente,
+                            a.id_paciente,
+                            b.id_profesional,
+                            d.nombre as nombre_locacion,
+                            (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as nombre_paciente,
+                            f.clave as clave_servicio,
+                            f.codigo_color,
+                            c.dia,
+                            TO_CHAR(c.hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(c.hora_termino, 'HH24:MI') AS hora_termino,
+                            b.id_servicio,
+                            c.id as id_cita_programada_servicio_horario,
+                            (e.primer_apellido|| ' ' ||COALESCE(e.segundo_apellido,'')||' '||e.nombre) as nombre_profesional,
+                            CASE 
+                                WHEN g.fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, g.fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, g.fecha_nacimiento))::text, 2, '0')
+                                ELSE NULL
+                            END AS edad_actual
+                        FROM tbcitas_programadas a 
+                        LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
+                        LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
+                        LEFT JOIN ctlocaciones d ON a.id_locacion = d.id
+                        LEFT JOIN ctprofesionales e ON b.id_profesional = e.id
+                        LEFT JOIN ctservicios f ON b.id_servicio = f.id
+                        LEFT JOIN ctpacientes g ON a.id_paciente = g.id
+
+                        WHERE b.id_profesional = :id_profesional AND b.id IS NOT NULL
+                        AND g.estatus = 1
+                        ORDER BY g.primer_apellido,g.segundo_apellido,g.nombre,c.dia,c.hora_inicio ";
+            $result = $db->query($phql,array('id_profesional' => $id_profesional));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    $edad_actual                = $data['edad_actual'] != null ? '('.$data['edad_actual'].')' : '(S/A)';
+                    $data['label_dia']          = $arr_dias[$data['dia']];
+                    $data['nombre_paciente']    = $data['nombre_paciente'].' '.$edad_actual;
+                    
+                    //  AGRUPACION POR PACIENTE
+                    $arr_return[$data['clave_paciente']]['id_paciente'] = $data['id_paciente'];
+                    $arr_return[$data['clave_paciente']]['nombre']      = $data['nombre_paciente'];
+                    
+                    if (!isset($arr_return[$data['clave_paciente']]['citas'])){
+                        $arr_return[$data['clave_paciente']]['citas']   = '';
+                    } else {
+                        $arr_return[$data['clave_paciente']]['citas']   .= ', ';
+                    }
+
+                    $arr_return[$data['clave_paciente']]['citas'] .= $data['label_dia'].' '.$data['hora_inicio'].' - '.$data['hora_termino'];
+                    
+                }
+            }
+
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');
             return $response;
         }
