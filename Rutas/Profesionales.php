@@ -1077,6 +1077,7 @@ return function (Micro $app,$di) {
                             g.clave as clave_paciente,
                             a.id_paciente,
                             b.id_profesional,
+                            d.clave as clave_locacion,
                             d.nombre as nombre_locacion,
                             (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as nombre_paciente,
                             f.clave as clave_servicio,
@@ -1092,7 +1093,8 @@ return function (Micro $app,$di) {
                                     EXTRACT(YEAR FROM AGE(CURRENT_DATE, g.fecha_nacimiento))::text || '.' ||
                                     LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, g.fecha_nacimiento))::text, 2, '0')
                                 ELSE NULL
-                            END AS edad_actual
+                            END AS edad_actual,
+                            h.fecha_limite
                         FROM tbcitas_programadas a 
                         LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
                         LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
@@ -1100,41 +1102,170 @@ return function (Micro $app,$di) {
                         LEFT JOIN ctprofesionales e ON b.id_profesional = e.id
                         LEFT JOIN ctservicios f ON b.id_servicio = f.id
                         LEFT JOIN ctpacientes g ON a.id_paciente = g.id
+                        LEFT JOIN LATERAL (
+                            SELECT DISTINCT ON (tmp.id_locacion) tmp.*
+                            FROM tbapertura_agenda tmp
+                            WHERE tmp.id_locacion = a.id_locacion
+                            ORDER BY tmp.id_locacion, tmp.fecha_limite DESC
+                        )h ON 1 = 1
 
                         WHERE b.id_profesional = :id_profesional AND b.id IS NOT NULL
                         AND g.estatus = 1
                         ORDER BY g.primer_apellido,g.segundo_apellido,g.nombre,c.dia,c.hora_inicio ";
             $result = $db->query($phql,array('id_profesional' => $id_profesional));
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $fecha_limite_locacion  = array();
     
             if ($result) {
                 while ($data = $result->fetch()) {
                     $edad_actual                = $data['edad_actual'] != null ? '('.$data['edad_actual'].')' : '(S/A)';
                     $data['label_dia']          = $arr_dias[$data['dia']];
                     $data['nombre_paciente']    = $data['nombre_paciente'].' '.$edad_actual;
+                    $id_index                   = $data['id_locacion'].$data['clave_paciente'];
+
+                    if (!isset($fecha_limite_locacion[$data['id_locacion']])){
+                        $fecha_limite_locacion[$data['id_locacion']]['nombre_locacion']   = $data['nombre_locacion'];
+                        $fecha_limite_locacion[$data['id_locacion']]['fecha_limite']      = FuncionesGlobales::formatearFecha($data['fecha_limite']);
+                    }
                     
                     //  AGRUPACION POR PACIENTE
-                    $arr_return[$data['clave_paciente']]['id_paciente'] = $data['id_paciente'];
-                    $arr_return[$data['clave_paciente']]['nombre']      = $data['nombre_paciente'];
+                    $arr_return[$id_index]['id_paciente']       = $data['id_paciente'];
+                    $arr_return[$id_index]['nombre']            = $data['nombre_paciente'];
+                    $arr_return[$id_index]['nombre_locacion']   = $data['nombre_locacion'];
+                    $arr_return[$id_index]['id_locacion']       = $data['id_locacion'];
                     
-                    if (!isset($arr_return[$data['clave_paciente']]['citas'])){
-                        $arr_return[$data['clave_paciente']]['citas']   = '';
+                    if (!isset($arr_return[$id_index]['citas'])){
+                        $arr_return[$id_index]['citas'] = '';
                     } else {
-                        $arr_return[$data['clave_paciente']]['citas']   .= ', ';
+                        $arr_return[$id_index]['citas'] .= ', ';
                     }
 
-                    $arr_return[$data['clave_paciente']]['citas'] .= $data['label_dia'].' '.$data['hora_inicio'].' - '.$data['hora_termino'];
+                    $arr_return[$id_index]['citas'] .= $data['label_dia'].' '.$data['hora_inicio'].' - '.$data['hora_termino'];
                     
                 }
             }
 
             // RESPUESTA JSON
             $response = new Response();
-            $response->setJsonContent($arr_return);
+            $response->setJsonContent(array(
+                'pacientes'     => $arr_return,
+                'fecha_limite'  => $fecha_limite_locacion
+            ));
             $response->setStatusCode(200, 'OK');
             return $response;
 
         }catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->post('/ctprofesionales/generar_citas', function () use ($app,$db,$request) {  
+
+        try{
+            $fecha_inicio           = $request->getPost('fecha_inicio') ?? null;
+            $clave_usuario          = $request->getPost('usuario_solicitud') ?? null;
+            $lista_pacientes        = $request->getPost('lista_pacientes') ?? null;
+            $arr_fechas_locacion    = array();
+            $arr_return             = array(
+                'mensaje_ok'    => array(),
+                'mensaje_error' => array(),
+            );
+
+            //  SE BUSCA LA ULTIMA APERTURA DE AGENDA DE CADA LOCACION Y SE VALIDA QUE LA FECHA 
+            //  DE INICIO SEA MENOR A LA INDICADA
+            $phql   = "SELECT *,
+                            (CASE WHEN :fecha_inicio <= fecha_limite THEN 1 ELSE 0 END) AS cumple_vigencia,
+                            (CASE WHEN :fecha_inicio >= current_date THEN 1 ELSE 0 END) AS cumple_vencimiento,
+                            CURRENT_DATE
+                        FROM (
+                            SELECT DISTINCT ON (id_locacion) 
+                                a.*,
+                                b.nombre AS nombre_locacion
+                            FROM tbapertura_agenda a
+                            LEFT JOIN ctlocaciones b ON a.id_locacion = b.id
+                            ORDER BY a.id_locacion, a.fecha_limite DESC
+                        ) sub;";
+
+            $result = $db->query($phql,array(
+                'fecha_inicio'  => $fecha_inicio
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result){
+                while($data = $result->fetch()){
+                    if ($data['cumple_vigencia'] == 0){
+                        throw new Exception('Fecha de inicio es mayor a la fecha limite para la locación: '.$data['nombre_locacion']);
+                    }
+
+                    if ($data['cumple_vencimiento'] == 0){
+                        throw new Exception('Fecha de inicio menor a la fecha permitida para modificar citas vencidas'.$data['fecha_vencimiento']);
+                    }
+                    $arr_fechas_locacion[$data['id_locacion']]  = $data;
+                }
+            }
+
+            
+            
+            foreach($lista_pacientes as $paciente){
+                
+                try{
+
+                    $nombre_paciente    = '';
+
+                    $phql   = " SELECT 
+                                    (primer_apellido|| ' ' ||COALESCE(segundo_apellido,'')||' '||nombre) as nombre_paciente
+                                FROM ctpacientes WHERE id = :id_paciente;";
+                    $values = array(
+                        'id_paciente'   => $paciente['id_paciente'],
+                    );
+
+                    $result = $db->query($phql,$values);
+                    $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result){
+                        while($data = $result->fetch()){
+                            $nombre_paciente    = $data['nombre_paciente'];
+                        }
+                    }
+
+                    //  SE AGENDAN LAS CITAS DEL PACIENTE
+                    $phql   = " SELECT * FROM fn_programar_citas(:id_paciente,:id_locacion,:fecha_inicio,:fecha_termino,:clave_usuario) 
+                                ;";
+                    $values = array(
+                        'id_paciente'   => $paciente['id_paciente'],
+                        'id_locacion'   => $paciente['id_locacion'],
+                        'fecha_inicio'  => $fecha_inicio,
+                        'fecha_termino' => $arr_fechas_locacion[$paciente['id_locacion']]['fecha_limite'],
+                        'clave_usuario' => $clave_usuario
+                    );
+
+                    $result = $db->query($phql,$values);
+                    $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result){
+                        while($data = $result->fetch()){
+                            $mensaje_original   = $data['fn_programar_citas'];
+                            $mensaje            = preg_replace('/\d+ paciente\(s\)/', $nombre_paciente, $mensaje_original);
+                            $arr_return['mensaje_ok'][] = $mensaje;
+                        }
+                    }
+                }catch(\Exception $err){
+                    $arr_return['mensaje_error'][]  = FuncionesGlobales::raiseExceptionMessage($err->getMessage());
+                }
+            }
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');
