@@ -375,8 +375,9 @@ return function (Micro $app,$di) {
         try{
             //  REPORTE GENERAL DE CITAS EN EL RANGO DE FECHAS
             //  INCLUYE INFORMACION GENERAL DEL PACIENTES Y DE LA CITA
-            $id_locacion    = $request->getQuery('id_locacion');
-            $rango_fechas   = $request->getQuery('rango_fechas') ?? null;
+            $id_locacion            = $request->getQuery('id_locacion');
+            $rango_fechas           = $request->getQuery('rango_fechas') ?? null;
+            $incluir_movtos_futuros = $request->getQuery('incluir_movtos_futuros') ?? null;
 
             if (empty($rango_fechas)){
                 throw new Exception('Rango de fechas vacio');
@@ -404,30 +405,24 @@ return function (Micro $app,$di) {
 
             $filtro = '';
             if (!empty($id_locacion)) {
-                $filtro .= " AND a.id_locacion = :id_locacion ";
+                $filtro .= "    AND EXISTS (
+                                    SELECT 1 FROM tbabonos_movimientos t1
+                                    LEFT JOIN tbagenda_citas t2 ON t1.id_agenda_cita = t2.id 
+                                    WHERE t1.id_abono = a.id AND t2.id_locacion = :id_locacion
+                                ) ";
                 $values['id_locacion']  = $id_locacion;
             }
             
             $phql   = " SELECT 
-                            fecha_pago::DATE,
-                            SUM(CASE WHEN a.forma_pago = 'TRANSFERENCIA' THEN a.total ELSE 0 END) AS total_transferencia,
-                            SUM(CASE WHEN a.forma_pago = 'EFECTIVO' THEN a.total ELSE 0 END) AS total_efectivo,
-                            SUM (total) as total_pagos 
-                        FROM tbagenda_citas a WHERE a.pagada = 1 ".$filtro."
-                            AND a.fecha_pago BETWEEN :fecha_inicio AND :fecha_termino AND NOT EXISTS (
-                                    SELECT 1 FROM tbagenda_citas t1 
-                                    WHERE a.id = t1.id_cita_reagendada 
-                                ) 
-                            --  EXCLUYE CITAS PAGADAS QUE POR NUEVA GENERACIO NDE CITAS SE HAYAN CANCELADO
-                            AND NOT EXISTS(
-                                SELECT 1 FROM tbagenda_citas t2 
-                                LEFT JOIN ctmotivos_cancelacion_cita t4 ON t2.id_motivo_cancelacion = t4.id
-                                WHERE t2.activa = 0 AND t2.pagada = 1 
-                                AND t2.id_cita_programada IS NOT NULL AND t4.clave = 'NGC' AND NOT EXISTS (
-                                    SELECT 1 FROM tbagenda_citas t3 WHERE t2.id = t3.id_cita_reagendada 
-                                ) AND t2.id = a.id
-                            )
-                            GROUP BY fecha_pago::DATE ORDER BY fecha_pago";
+                            fecha_hora_pago::DATE,
+                            SUM(CASE WHEN a.metodo_pago = 'TRANSFERENCIA' THEN a.monto ELSE 0 END) AS total_transferencia,
+                            SUM(CASE WHEN a.metodo_pago = 'EFECTIVO' THEN a.monto ELSE 0 END) AS total_efectivo,
+                            SUM (a.monto) as total_pagos
+                        FROM tbabonos a 
+                        WHERE a.fecha_hora_pago::DATE BETWEEN :fecha_inicio AND :fecha_termino
+                        AND a.estatus = 1
+                        $filtro
+                        GROUP BY a.fecha_hora_pago";
     
             $result = $db->query($phql,$values);
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
@@ -439,10 +434,11 @@ return function (Micro $app,$di) {
                     'total_efectivo'        => 0,
                     'total_transferencia'   => 0
                 ],
-                'hoja_2'    => []
+                'hoja_2'    => [],
+                'hoja_3'    => [],
             );
             while ($row = $result->fetch()) {
-                $row['fecha_pago']  = FuncionesGlobales::formatearFecha($row['fecha_pago']);
+                $row['fecha_hora_pago'] = FuncionesGlobales::formatearFecha($row['fecha_hora_pago']);
 
                 $arr_return['hoja_2'][] = $row;
 
@@ -450,6 +446,100 @@ return function (Micro $app,$di) {
                 $arr_return['hoja_1']['total_pagos']    = (($arr_return['hoja_1']['total_pagos'] * 100) + ($row['total_pagos'] * 100) ) / 100;
                 $arr_return['hoja_1']['total_efectivo']         = (($arr_return['hoja_1']['total_efectivo'] * 100) + ($row['total_efectivo'] * 100) ) / 100;
                 $arr_return['hoja_1']['total_transferencia']    = (($arr_return['hoja_1']['total_transferencia'] * 100) + ($row['total_transferencia'] * 100) ) / 100;
+            }
+
+            //  DESGLOSE DE ABONOS CON SUS RESPECTIVOS MOVIMIENTOS
+            $phql   = " SELECT  
+                            a.id as id_abono,
+                            a.monto,
+                            a.metodo_pago,
+                            a.fecha_hora_pago,
+                            a.estatus,
+                            a.tipo_cancelacion,
+                            a.fecha_cancelacion,
+                            (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo
+                        FROM tbabonos a 
+                        LEFT JOIN ctpacientes b ON a.id_paciente = b.id
+                        WHERE a.fecha_hora_pago::DATE BETWEEN :fecha_inicio AND :fecha_termino AND a.tipo_abono = 1 $filtro 
+                        ORDER BY a.fecha_hora_pago;";
+
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result){
+                while($data_abonos = $result->fetch()){
+                    $data_abonos['monto_disponible']    = $data_abonos['monto'];
+                    $data_abonos['fecha_hora_pago']     = FuncionesGlobales::formatearFecha($data_abonos['fecha_hora_pago'],'d/m/Y H:i');
+
+                    $label_estatus_abono    = '';
+
+                    if ($data_abonos['estatus'] == 1){
+                        $label_estatus_abono    = 'ACTIVO';
+                    } else {
+                        if ($data_abonos['tipo_cancelacion'] == 2){
+                            $label_estatus_abono    = 'DEVOLUCIÓN';
+                        } else {
+                            $label_estatus_abono    = 'CANCELADO';
+                        }
+                    }
+
+                    $data_abonos['label_estatus_abono'] = $label_estatus_abono;
+
+                    $values_movtos  = array(
+                        'id_abono' => $data_abonos['id_abono']
+                    );
+
+                    //  SE BUSCAN TODOS LOS MOVIMIENTOS DE CADA ABONO
+                    $phql   = " SELECT  
+                                    a.monto,
+                                    a.fecha_hora_pago,
+                                    a.estatus,
+                                    a.tipo_cancelacion,
+                                    a.fecha_cancelacion
+                                FROM tbabonos_movimientos a
+                                WHERE a.id_abono = :id_abono";
+
+                    if (!$incluir_movtos_futuros){
+                        $phql   .= " AND a.fecha_hora_pago::DATE BETWEEN :fecha_inicio AND :fecha_termino ";
+
+                        $values_movtos['fecha_inicio']  = $rango_fechas['fecha_inicio'];
+                        $values_movtos['fecha_termino'] = $rango_fechas['fecha_termino'];
+
+                    }
+
+                    $phql   .= " ORDER BY a.fecha_hora_pago; ";
+
+                    $result_movtos  = $db->query($phql,$values_movtos);
+                    $result_movtos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result_movtos){
+                        while($data_movtos = $result_movtos->fetch()){
+                            $data_movtos['fecha_hora_pago'] = FuncionesGlobales::formatearFecha($data_movtos['fecha_hora_pago'],'d/m/Y H:i');
+                            //  ESTATUS MOVTO
+                            //  ACTIVO,DEVOLUCION O CANCELADO
+                            $label_estatus_movto    = '';
+
+                            if ($data_movtos['estatus'] == 1){
+                                $label_estatus_movto    = 'ACTIVO';
+                            } else {
+                                if ($data_movtos['tipo_cancelacion'] == 2){
+                                    $label_estatus_movto    = 'DEVOLUCIÓN';
+                                } else {
+                                    $label_estatus_movto    = 'CANCELADO';
+                                }
+                            }
+
+                            $data_movtos['label_estatus_movto'] = $label_estatus_movto;
+
+                            $data_abonos['info_movtos'][]   = $data_movtos;
+                            if ($data_movtos['estatus'] == 1 || ($data_movtos['estatus'] == 0 && $data_movtos['tipo_cancelacion'] == 2)){
+                                $data_abonos['monto_disponible']    = (($data_abonos['monto_disponible'] * 100) - ($data_movtos['monto'] * 100)) / 100;
+                            }
+                        }
+                    }
+
+                    $arr_return['hoja_3'][] = $data_abonos;
+                }
             }
     
             // Devolver los datos en formato JSON
