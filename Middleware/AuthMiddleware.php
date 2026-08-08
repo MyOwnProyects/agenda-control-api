@@ -44,7 +44,9 @@ class AuthMiddleware
                 return $this->unauthorized($app, 'Token revocado');
             }
 
-            if ($blacklistService->isInactiveUser($_GET['usuario_solicitud'])) {
+            $usuario_solicitud  = isset($_GET['usuario_solicitud']) ? $_GET['usuario_solicitud'] : $_POST['usuario_solicitud'];
+
+            if ($blacklistService->isInactiveUser($usuario_solicitud)) {
                 return $this->unauthorized($app, 'Token revocado');
             }
             
