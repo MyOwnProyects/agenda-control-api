@@ -1007,8 +1007,10 @@ return function (Micro $app,$di) {
 
     $app->post('/ctprofesionales/update_horario_fijo', function () use ($app, $db,$request) {
         
+        $conexion   = $db;
         try{
 
+            $conexion->begin();
             $arr_dias   = array(
                 1   => 'Lunes',
                 2   => 'Martes',
@@ -1031,19 +1033,71 @@ return function (Micro $app,$di) {
             $result = $db->query($phql, array('id' => $id_cita_programada_servicio_horario));
             $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
     
-            $flag_create    = false;
             if ($result) {
                 while ($data = $result->fetch()) {
                     $id_cita_programada_servicio    = $data['id_cita_programada_servicio'];
                 }
             }
 
-            $phql   = "UPDATE tbcitas_programadas_servicios SET id_profesional = :id_profesional WHERE id = :id_cita_programada_servicio";
-            $result = $db->execute($phql, array(
-                'id_cita_programada_servicio'   => $id_cita_programada_servicio,
-                'id_profesional'                => $id_profesional
-            ));
+            //  SE BUSCA SI EL REGISTRO DE id_cita_programada_servicio TIENE MAS DE UNA CITA
+            $phql   = "SELECT COUNT(*) as num_registros FROM tbcitas_programadas_servicios_horarios WHERE id_cita_programada_servicio = :id";
+            $result = $db->query($phql, array('id' => $id_cita_programada_servicio));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            $flag_create    = false;
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    if ($data['num_registros'] > 1){
+                        $flag_create    = true;
+                    }
+                }
+            }
 
+            //  SE ACTUALIZA EL REGISTRO YA QUE EL SERVICIO SOLO TIENE UN HORARIO
+            if (!$flag_create){
+                $phql   = "UPDATE tbcitas_programadas_servicios SET id_profesional = :id_profesional WHERE id = :id_cita_programada_servicio";
+                $result = $conexion->execute($phql, array(
+                    'id_cita_programada_servicio'   => $id_cita_programada_servicio,
+                    'id_profesional'                => $id_profesional
+                ));
+            } else {
+                //  1. SE CREA EL NUEVO SERVICIO
+                //  2. SE CREA EL HORARIO EN BASE AL HORARIO ANTERIOR
+                //  3. SE BORRA EL VIEJO HORARIO
+                $phql   = " INSERT INTO tbcitas_programadas_servicios (id_cita_programada,id_servicio,id_profesional )
+                            SELECT id_cita_programada,id_servicio,:id_profesional 
+                            FROM tbcitas_programadas_servicios WHERE id = :id RETURNING *";
+                $result = $conexion->query($phql, array(
+                    'id'                => $id_cita_programada_servicio,
+                    'id_profesional'    => $id_profesional
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                $id_cita_programada_servicio_nuevo  = null;
+                if ($result) {
+                    while ($data = $result->fetch()) {
+                        $id_cita_programada_servicio_nuevo  = $data['id'];
+                    }
+                }
+
+                //  SE CRE EL NUEVO HORARIO
+                $phql   = " INSERT INTO tbcitas_programadas_servicios_horarios (id_cita_programada_servicio,dia,hora_inicio,hora_termino )
+                            SELECT :id_cita_programada_servicio_nuevo,dia,hora_inicio,hora_termino 
+                            FROM tbcitas_programadas_servicios_horarios WHERE id = :id";
+                $result = $conexion->execute($phql, array(
+                    'id_cita_programada_servicio_nuevo' => $id_cita_programada_servicio_nuevo,
+                    'id'                                => $id_cita_programada_servicio_horario
+                ));
+
+                //  SE BORRA EL NUEVO HORARIO
+                $phql   = "DELETE FROM tbcitas_programadas_servicios_horarios WHERE id = :id";
+                $result = $conexion->execute($phql, array(
+                    'id'                                => $id_cita_programada_servicio_horario
+                ));
+
+            }
+            
+            $conexion->commit();
             return json_encode(array('MSG' => 'OK'));         
         }catch(\Exception $err){
             $conexion->rollback();
