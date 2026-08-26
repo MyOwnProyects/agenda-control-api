@@ -834,4 +834,161 @@ return function (Micro $app,$di) {
         }
         
     });
+
+    $app->put('/becas/cancelar_pago', function () use ($app,$db,$request) {
+        $conexion   = $db;
+        try{
+
+            $conexion->begin();
+
+            $observaciones_cancelacion  = $request->getPost('observaciones_cancelacion'); 
+            $ticket_folio               = $request->getPost('ticket_folio');
+            $id_paciente                = $request->getPost('id_paciente');
+            $usuario_solicitud          = $request->getPost('usuario_solicitud');
+
+            if (!is_numeric($id_paciente)) {
+                throw new Exception('Parámetro "paciente" No valido');
+            }
+
+            if (empty($ticket_folio)) {
+                throw new Exception('Parámetro "ticket" No valido');
+            }
+
+            $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
+            $result = $db->query($phql,array('clave_usuario' => $usuario_solicitud));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_usuario_solicitud   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    $id_usuario_solicitud   = $data['id'];
+                }
+            }
+
+            //  SE VERIFICA QUE SEA EL ULTIMO TICKET DEL PACIENTE
+            $phql   = " SELECT a.* FROM tbabonos a 
+                        LEFT JOIN tbtickets_pagos b ON a.ticket_folio = b.folio
+                        WHERE a.id_paciente = :id_paciente AND a.id_paciente_beca IS NOT NULL
+                        AND a.estatus = 1
+                        ORDER BY b.fecha_captura DESC
+                        LIMIT 1
+                        ";
+
+            $result = $db->query($phql,array(
+                'id_paciente'   => $id_paciente,
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $id_paciente_beca   = null;
+            if ($result){
+                while($data = $result->fetch()){
+                    if ($data['ticket_folio'] != $ticket_folio){
+                        throw new Exception('Solo se pueden realizar cancelaciones del ultimo abono de tipo beca');
+                    }
+
+                    $id_paciente_beca   = $data['id_paciente_beca'];
+                }
+            }
+
+            //  SE CANCELAN TODOS LOS MOVIMIENTOS DEL ABONO
+            $phql   = " UPDATE 
+                            tbabonos_movimientos 
+                        SET 
+                            estatus = 0, 
+                            fecha_cancelacion = NOW(), 
+                            id_usuario_cancelacion = :id_usuario_cancelacion,
+                            observaciones_cancelacion = :observaciones_cancelacion
+                        FROM (
+                            SELECT id AS id_abono2 FROM tbabonos
+                            WHERE ticket_folio = :ticket_folio AND estatus = 1 AND id_paciente = :id_paciente
+                        ) t1 WHERE id_abono = t1.id_abono2";
+
+            $result = $conexion->execute($phql,array(
+                'ticket_folio'  => $ticket_folio,
+                'id_paciente'   => $id_paciente,
+                'observaciones_cancelacion' => $observaciones_cancelacion,
+                'id_usuario_cancelacion'    => $id_usuario_solicitud
+            ));
+
+            //  SE CANCELA EL ABONO
+            $phql   = " UPDATE 
+                            tbabonos 
+                        SET 
+                            estatus = 0, 
+                            fecha_cancelacion = NOW(), 
+                            id_usuario_cancelacion = :id_usuario_cancelacion,
+                            observaciones_cancelacion = :observaciones_cancelacion
+                        WHERE 
+                            ticket_folio = :ticket_folio AND 
+                            id_paciente = :id_paciente AND
+                            estatus = 1
+                        ";
+            $result = $conexion->execute($phql,array(
+                'ticket_folio'  => $ticket_folio,
+                'id_paciente'   => $id_paciente,
+                'observaciones_cancelacion' => $observaciones_cancelacion,
+                'id_usuario_cancelacion'    => $id_usuario_solicitud
+            ));
+
+            //  LA BECA ASIGNACION SE MARCA COMO CANCELADA
+            $phql   = " UPDATE 
+                            tbpaciente_becas 
+                        SET 
+                            estatus = 0, 
+                            fecha_cancelacion = NOW(), 
+                            id_usuario_cancelacion = :id_usuario_cancelacion,
+                            observaciones_cancelacion = :observaciones_cancelacion
+                        WHERE id = :id_paciente_beca";
+
+            $result = $conexion->execute($phql,array(
+                'id_paciente_beca'          => $id_paciente_beca,
+                'observaciones_cancelacion' => $observaciones_cancelacion,
+                'id_usuario_cancelacion'    => $id_usuario_solicitud
+            ));
+
+            //  SE VERIFICA EL SALDO DE LA CITA A LA QUE APUNTA EL MOVIMIENTO
+            //  ESTO PARA MARCAR LA CITA COMO PAGADA = 0
+            $phql   = " SELECT 
+                            fn_saldo_cita(a.id) as saldo_cita,
+                            a.activa,
+                            a.pagada,
+                            a.total,
+                            a.id as id_agenda_cita
+                        FROM tbagenda_citas a WHERE EXISTS (
+                            SELECT 1 FROM tbabonos_movimientos t1
+                            LEFT JOIN tbabonos t2 ON t1.id_abono = t2.id
+                            WHERE t2.id_paciente_beca = :id_paciente_beca AND 
+                            t1.id_agenda_cita = a.id
+                        )";
+
+            $result_cita    = $db->query($phql,array(
+                'id_paciente_beca' => $id_paciente_beca
+                ));
+            $result_cita->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            while($data_cita = $result_cita->fetch()){
+                //  PARA MODIFICAR EL ESTATUS DE PAGADA DE LA CITA ESTA DEBE DE:
+                //  1. ESTAR ACTIVA
+                //  2. ESTAR MARCADA COMO PAGADA
+                //  3. EL TOTAL DE LA CITA ES MAYOR QUE EL SALDO_CITA
+                if ($data_cita['activa'] != 0 && $data_cita['pagada'] == 1 && $data_cita['saldo_cita'] > 0){
+                    $phql   = "UPDATE tbagenda_citas SET pagada = 0, fecha_pago = null, id_usuario_pago = null, forma_pago = null WHERE id = :id_agenda_cita";
+                    $result_update_cita = $conexion->execute($phql,array('id_agenda_cita' => $data_cita['id_agenda_cita']));
+                }
+            }
+                        
+            $conexion->commit();
+            //$conexion->rollback();
+
+            return json_encode(array('MSG' => 'OK'));
+
+
+        }catch (\Exception $e){
+            $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(404, 'Not found');
+            return $response;
+        }
+    });
 };
