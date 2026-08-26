@@ -407,6 +407,7 @@ return function (Micro $app,$di) {
             //  A LOS USUARIOS SIN UN TIPO
             $id_usuario     = $request->getPost('id');
             $estatus        = '';
+            $last_estatus   = $request->getPost('estatus');
             $flag_exists    = false;
 
             $phql   = "SELECT * FROM ctusuarios WHERE id = :id_usuario";
@@ -419,6 +420,10 @@ return function (Micro $app,$di) {
 
             if ($estatus == ''){
                 throw new Exception("Registro inexistente en el catalogo");
+            }
+
+            if ($estatus != $last_estatus){
+                throw new Exception("El estatus actual del usuario a cambiado, refresca la vista para verificar esta información");
             }
 
             $estatus = $estatus == 1 ? 0 : 1;

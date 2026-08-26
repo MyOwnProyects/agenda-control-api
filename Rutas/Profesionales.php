@@ -19,6 +19,7 @@ return function (Micro $app,$di) {
             $id_servicio    = $request->getQuery('id_servicio');
             $id_locacion    = $request->getQuery('id_locacion') ?? null;
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            $estatus            = $request->getQuery('estatus') ?? null;
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -66,6 +67,11 @@ return function (Micro $app,$di) {
                 $values['id_locacion']  = $id_locacion;
             }
 
+            if (!empty($estatus)){
+                $phql               .= " AND a.estatus = :estatus";
+                $values['estatus']  = $estatus;
+            }
+
             $phql   .= " AND EXISTS (
                 SELECT 1 FROM ctprofesionales_locaciones_servicios t1
                 LEFT JOIN ctusuarios_locaciones t2 ON t1.id_locacion = t2.id_locacion 
@@ -108,6 +114,7 @@ return function (Micro $app,$di) {
             $id_servicio    = $request->getQuery('id_servicio');
             $id_locacion    = $request->getQuery('id_locacion') ?? null;
             $usuario_solicitud  = $request->getQuery('usuario_solicitud');
+            $estatus            = $request->getQuery('estatus') ?? null;
             
             if ($id != null && !is_numeric($id)){
                 throw new Exception("Parametro de id invalido");
@@ -157,6 +164,11 @@ return function (Micro $app,$di) {
                             )";
 
                 $values['id_locacion']  = $id_locacion;
+            }
+
+            if (!empty($estatus)){
+                $phql               .= " AND a.estatus = :estatus";
+                $values['estatus']  = $estatus;
             }
 
             $phql   .= " AND EXISTS (
@@ -682,6 +694,7 @@ return function (Micro $app,$di) {
             //  A LOS USUARIOS SIN UN TIPO
             $id             = $request->getPost('id');
             $estatus        = '';
+            $last_estatus   = $request->getPost('estatus');
             $flag_exists    = false;
 
             $phql   = "SELECT * FROM ctprofesionales WHERE id = :id";
@@ -694,6 +707,10 @@ return function (Micro $app,$di) {
 
             if ($estatus == ''){
                 throw new Exception("Registro inexistente en el catalogo");
+            }
+
+            if ($estatus != $last_estatus){
+                throw new Exception("El estatus actual del profesional a cambiado, refresca la vista para verificar esta información");
             }
 
             $estatus = $estatus == 1 ? 0 : 1;
@@ -818,6 +835,491 @@ return function (Micro $app,$di) {
             
         } catch (\Exception $e) {
             $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->get('/ctprofesionales/get_horario_fijo', function () use ($app, $db,$request) {
+        
+        try{
+            
+            $id_profesional = $request->getQuery('id_profesional');
+            $arr_return     = array();
+
+            $arr_dias   = array(
+                1   => 'Lunes',
+                2   => 'Martes',
+                3   => 'Miercoles',
+                4   => 'Jueves',
+                5   => 'Viernes',
+                6   => 'Sabado',
+                7   => 'Domingo'
+            );
+
+            $phql   = " SELECT  
+                            a.id as id_cita_programada,
+                            a.id_locacion,
+                            a.id_paciente,
+                            b.id_profesional,
+                            d.nombre as nombre_locacion,
+                            (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as nombre_paciente,
+                            f.clave as clave_servicio,
+                            f.codigo_color,
+                            c.dia,
+                            TO_CHAR(c.hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(c.hora_termino, 'HH24:MI') AS hora_termino,
+                            b.id_servicio,
+                            c.id as id_cita_programada_servicio_horario,
+                            (e.primer_apellido|| ' ' ||COALESCE(e.segundo_apellido,'')||' '||e.nombre) as nombre_profesional,
+                            CASE 
+                                WHEN g.fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, g.fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, g.fecha_nacimiento))::text, 2, '0')
+                                ELSE NULL
+                            END AS edad_actual
+                        FROM tbcitas_programadas a 
+                        LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
+                        LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
+                        LEFT JOIN ctlocaciones d ON a.id_locacion = d.id
+                        LEFT JOIN ctprofesionales e ON b.id_profesional = e.id
+                        LEFT JOIN ctservicios f ON b.id_servicio = f.id
+                        LEFT JOIN ctpacientes g ON a.id_paciente = g.id
+
+                        WHERE b.id_profesional = :id_profesional AND b.id IS NOT NULL
+                        ORDER BY c.dia,c.hora_inicio, e.primer_apellido,e.segundo_apellido,e.nombre ";
+            $result = $db->query($phql,array('id_profesional' => $id_profesional));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    $edad_actual                = $data['edad_actual'] != null ? '('.$data['edad_actual'].')' : '(S/A)';
+                    $data['label_dia']          = $arr_dias[$data['dia']];
+                    $data['nombre_paciente']    = $data['nombre_paciente'].' '.$edad_actual;
+                    $arr_return[]       = $data;
+                }
+            }
+
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->get('/ctprofesionales/verificar_disponibilidad', function () use ($app, $db,$request) {
+        
+        //  SE EJECUTA FUNCION PARA VALIDAR EMPALMADOS
+        $conexion   = $db;
+        try{
+
+            $conexion->begin();
+
+            $arr_dias   = array(
+                1   => 'Lunes',
+                2   => 'Martes',
+                3   => 'Miercoles',
+                4   => 'Jueves',
+                5   => 'Viernes',
+                6   => 'Sabado',
+                7   => 'Domingo'
+            );
+
+            $id_profesional = $request->getQuery('id_profesional');
+            $id_paciente    = null;
+            $dia            = null;
+            $label_dia      = null;
+            $hora_inicio    = null;
+            $hora_termino   = null;
+            $id_cita_programada_servicio_horario = $request->getQuery('id_cita_programada_servicio_horario');
+
+
+            //  OBTENCION DE INFORMACION DE LA CITA PROGRAMADA
+            $phql   = " SELECT  
+                            a.id_paciente,
+                            c.hora_inicio,
+                            c.hora_termino,
+                            c.dia
+                        FROM tbcitas_programadas a 
+                        LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
+                        LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
+                        WHERE c.id = :id_cita_programada_servicio_horario";
+            $values = array(
+                'id_cita_programada_servicio_horario'   => $id_cita_programada_servicio_horario
+            );
+
+            $result = $conexion->query($phql, $values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            $flag_create    = false;
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    $id_paciente    = $data['id_paciente'];
+                    $dia            = $data['dia'];
+                    $hora_inicio    = $data['hora_inicio'];
+                    $hora_termino   = $data['hora_termino'];
+                }
+            }
+
+            //  DELETE PARA EVITAR MOSTRAR EMPALADO
+            $phql   = "DELETE FROM tbcitas_programadas_servicios_horarios WHERE id = :id ";
+            $result = $conexion->query($phql, array('id' => $id_cita_programada_servicio_horario));
+
+            $phql   = "SELECT * FROM fn_validar_citas_programadas(:id_profesional, :id_paciente, :dia,:label_dia, :hora_inicio, :hora_termino)";
+            $values = array(
+                'id_profesional'    => $id_profesional,
+                'id_paciente'       => $id_paciente,
+                'dia'               => $dia,
+                'label_dia'         => $arr_dias[$dia],
+                'hora_inicio'       => $hora_inicio,
+                'hora_termino'      => $hora_termino
+            );
+
+            $result_horario = $conexion->query($phql, $values);
+            $result_horario->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            $flag_create    = false;
+            if ($result_horario) {
+                while ($data_horario = $result_horario->fetch()) {
+                    $flag_create    = true;
+                }
+            }
+
+            $conexion->rollback();
+            return json_encode(array('RESULTADO' => $flag_create));         
+        }catch(\Exception $err){
+            $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->post('/ctprofesionales/update_horario_fijo', function () use ($app, $db,$request) {
+        
+        $conexion   = $db;
+        try{
+
+            $conexion->begin();
+            $arr_dias   = array(
+                1   => 'Lunes',
+                2   => 'Martes',
+                3   => 'Miercoles',
+                4   => 'Jueves',
+                5   => 'Viernes',
+                6   => 'Sabado',
+                7   => 'Domingo'
+            );
+
+            $id_profesional = $request->getPost('id_profesional');
+            $id_cita_programada_servicio_horario    = $request->getPost('id_cita_programada_servicio_horario');
+            $id_cita_programada_servicio            = null;
+
+            $phql   = " SELECT 
+                            id_cita_programada_servicio 
+                        FROM tbcitas_programadas_servicios_horarios a 
+                        WHERE id = :id";
+
+            $result = $db->query($phql, array('id' => $id_cita_programada_servicio_horario));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    $id_cita_programada_servicio    = $data['id_cita_programada_servicio'];
+                }
+            }
+
+            //  SE BUSCA SI EL REGISTRO DE id_cita_programada_servicio TIENE MAS DE UNA CITA
+            $phql   = "SELECT COUNT(*) as num_registros FROM tbcitas_programadas_servicios_horarios WHERE id_cita_programada_servicio = :id";
+            $result = $db->query($phql, array('id' => $id_cita_programada_servicio));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+    
+            $flag_create    = false;
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    if ($data['num_registros'] > 1){
+                        $flag_create    = true;
+                    }
+                }
+            }
+
+            //  SE ACTUALIZA EL REGISTRO YA QUE EL SERVICIO SOLO TIENE UN HORARIO
+            if (!$flag_create){
+                $phql   = "UPDATE tbcitas_programadas_servicios SET id_profesional = :id_profesional WHERE id = :id_cita_programada_servicio";
+                $result = $conexion->execute($phql, array(
+                    'id_cita_programada_servicio'   => $id_cita_programada_servicio,
+                    'id_profesional'                => $id_profesional
+                ));
+            } else {
+                //  1. SE CREA EL NUEVO SERVICIO
+                //  2. SE CREA EL HORARIO EN BASE AL HORARIO ANTERIOR
+                //  3. SE BORRA EL VIEJO HORARIO
+                $phql   = " INSERT INTO tbcitas_programadas_servicios (id_cita_programada,id_servicio,id_profesional )
+                            SELECT id_cita_programada,id_servicio,:id_profesional 
+                            FROM tbcitas_programadas_servicios WHERE id = :id RETURNING *";
+                $result = $conexion->query($phql, array(
+                    'id'                => $id_cita_programada_servicio,
+                    'id_profesional'    => $id_profesional
+                ));
+                $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+        
+                $id_cita_programada_servicio_nuevo  = null;
+                if ($result) {
+                    while ($data = $result->fetch()) {
+                        $id_cita_programada_servicio_nuevo  = $data['id'];
+                    }
+                }
+
+                //  SE CRE EL NUEVO HORARIO
+                $phql   = " INSERT INTO tbcitas_programadas_servicios_horarios (id_cita_programada_servicio,dia,hora_inicio,hora_termino )
+                            SELECT :id_cita_programada_servicio_nuevo,dia,hora_inicio,hora_termino 
+                            FROM tbcitas_programadas_servicios_horarios WHERE id = :id";
+                $result = $conexion->execute($phql, array(
+                    'id_cita_programada_servicio_nuevo' => $id_cita_programada_servicio_nuevo,
+                    'id'                                => $id_cita_programada_servicio_horario
+                ));
+
+                //  SE BORRA EL NUEVO HORARIO
+                $phql   = "DELETE FROM tbcitas_programadas_servicios_horarios WHERE id = :id";
+                $result = $conexion->execute($phql, array(
+                    'id'                                => $id_cita_programada_servicio_horario
+                ));
+
+            }
+            
+            $conexion->commit();
+            return json_encode(array('MSG' => 'OK'));         
+        }catch(\Exception $err){
+            $conexion->rollback();
+            $response = new Response();
+            $response->setJsonContent(FuncionesGlobales::raiseExceptionMessage($err->getMessage()));
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->get('/ctprofesionales/get_pacientes_asignados', function () use ($app, $db,$request) {
+        
+        try{
+            
+            $id_profesional = $request->getQuery('id_profesional');
+            $arr_return     = array();
+
+            $arr_dias   = array(
+                1   => 'Lunes',
+                2   => 'Martes',
+                3   => 'Miercoles',
+                4   => 'Jueves',
+                5   => 'Viernes',
+                6   => 'Sabado',
+                7   => 'Domingo'
+            );
+
+            $phql   = " SELECT  
+                            a.id as id_cita_programada,
+                            a.id_locacion,
+                            g.clave as clave_paciente,
+                            a.id_paciente,
+                            b.id_profesional,
+                            d.clave as clave_locacion,
+                            d.nombre as nombre_locacion,
+                            (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as nombre_paciente,
+                            f.clave as clave_servicio,
+                            f.codigo_color,
+                            c.dia,
+                            TO_CHAR(c.hora_inicio, 'HH24:MI') AS hora_inicio,
+                            TO_CHAR(c.hora_termino, 'HH24:MI') AS hora_termino,
+                            b.id_servicio,
+                            c.id as id_cita_programada_servicio_horario,
+                            (e.primer_apellido|| ' ' ||COALESCE(e.segundo_apellido,'')||' '||e.nombre) as nombre_profesional,
+                            CASE 
+                                WHEN g.fecha_nacimiento IS NOT NULL THEN
+                                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, g.fecha_nacimiento))::text || '.' ||
+                                    LPAD(EXTRACT(MONTH FROM AGE(CURRENT_DATE, g.fecha_nacimiento))::text, 2, '0')
+                                ELSE NULL
+                            END AS edad_actual,
+                            h.fecha_limite
+                        FROM tbcitas_programadas a 
+                        LEFT JOIN tbcitas_programadas_servicios b ON a.id = b.id_cita_programada
+                        LEFT JOIN tbcitas_programadas_servicios_horarios c ON b.id = c.id_cita_programada_servicio
+                        LEFT JOIN ctlocaciones d ON a.id_locacion = d.id
+                        LEFT JOIN ctprofesionales e ON b.id_profesional = e.id
+                        LEFT JOIN ctservicios f ON b.id_servicio = f.id
+                        LEFT JOIN ctpacientes g ON a.id_paciente = g.id
+                        LEFT JOIN LATERAL (
+                            SELECT DISTINCT ON (tmp.id_locacion) tmp.*
+                            FROM tbapertura_agenda tmp
+                            WHERE tmp.id_locacion = a.id_locacion
+                            ORDER BY tmp.id_locacion, tmp.fecha_limite DESC
+                        )h ON 1 = 1
+
+                        WHERE b.id_profesional = :id_profesional AND b.id IS NOT NULL
+                        AND g.estatus = 1
+                        ORDER BY g.primer_apellido,g.segundo_apellido,g.nombre,c.dia,c.hora_inicio ";
+            $result = $db->query($phql,array('id_profesional' => $id_profesional));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $fecha_limite_locacion  = array();
+    
+            if ($result) {
+                while ($data = $result->fetch()) {
+                    $edad_actual                = $data['edad_actual'] != null ? '('.$data['edad_actual'].')' : '(S/A)';
+                    $data['label_dia']          = $arr_dias[$data['dia']];
+                    $data['nombre_paciente']    = $data['nombre_paciente'].' '.$edad_actual;
+                    $id_index                   = $data['id_locacion'].$data['clave_paciente'];
+
+                    if (!isset($fecha_limite_locacion[$data['id_locacion']])){
+                        $fecha_limite_locacion[$data['id_locacion']]['nombre_locacion']   = $data['nombre_locacion'];
+                        $fecha_limite_locacion[$data['id_locacion']]['fecha_limite']      = FuncionesGlobales::formatearFecha($data['fecha_limite']);
+                    }
+                    
+                    //  AGRUPACION POR PACIENTE
+                    $arr_return[$id_index]['id_paciente']       = $data['id_paciente'];
+                    $arr_return[$id_index]['nombre']            = $data['nombre_paciente'];
+                    $arr_return[$id_index]['nombre_locacion']   = $data['nombre_locacion'];
+                    $arr_return[$id_index]['id_locacion']       = $data['id_locacion'];
+                    
+                    if (!isset($arr_return[$id_index]['citas'])){
+                        $arr_return[$id_index]['citas'] = '';
+                    } else {
+                        $arr_return[$id_index]['citas'] .= ', ';
+                    }
+
+                    $arr_return[$id_index]['citas'] .= $data['label_dia'].' '.$data['hora_inicio'].' - '.$data['hora_termino'];
+                    
+                }
+            }
+
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent(array(
+                'pacientes'     => $arr_return,
+                'fecha_limite'  => $fecha_limite_locacion
+            ));
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e) {
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+    });
+
+    $app->post('/ctprofesionales/generar_citas', function () use ($app,$db,$request) {  
+
+        try{
+            $fecha_inicio           = $request->getPost('fecha_inicio') ?? null;
+            $clave_usuario          = $request->getPost('usuario_solicitud') ?? null;
+            $lista_pacientes        = $request->getPost('lista_pacientes') ?? null;
+            $arr_fechas_locacion    = array();
+            $arr_return             = array(
+                'mensaje_ok'    => array(),
+                'mensaje_error' => array(),
+            );
+
+            //  SE BUSCA LA ULTIMA APERTURA DE AGENDA DE CADA LOCACION Y SE VALIDA QUE LA FECHA 
+            //  DE INICIO SEA MENOR A LA INDICADA
+            $phql   = "SELECT *,
+                            (CASE WHEN :fecha_inicio <= fecha_limite THEN 1 ELSE 0 END) AS cumple_vigencia,
+                            (CASE WHEN :fecha_inicio >= current_date THEN 1 ELSE 0 END) AS cumple_vencimiento,
+                            CURRENT_DATE
+                        FROM (
+                            SELECT DISTINCT ON (id_locacion) 
+                                a.*,
+                                b.nombre AS nombre_locacion
+                            FROM tbapertura_agenda a
+                            LEFT JOIN ctlocaciones b ON a.id_locacion = b.id
+                            ORDER BY a.id_locacion, a.fecha_limite DESC
+                        ) sub;";
+
+            $result = $db->query($phql,array(
+                'fecha_inicio'  => $fecha_inicio
+            ));
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            if ($result){
+                while($data = $result->fetch()){
+                    if ($data['cumple_vigencia'] == 0){
+                        throw new Exception('Fecha de inicio es mayor a la fecha limite para la locación: '.$data['nombre_locacion']);
+                    }
+
+                    if ($data['cumple_vencimiento'] == 0){
+                        throw new Exception('Fecha de inicio menor a la fecha permitida para modificar citas vencidas'.$data['fecha_vencimiento']);
+                    }
+                    $arr_fechas_locacion[$data['id_locacion']]  = $data;
+                }
+            }
+
+            
+            
+            foreach($lista_pacientes as $paciente){
+                
+                try{
+
+                    $nombre_paciente    = '';
+
+                    $phql   = " SELECT 
+                                    (primer_apellido|| ' ' ||COALESCE(segundo_apellido,'')||' '||nombre) as nombre_paciente
+                                FROM ctpacientes WHERE id = :id_paciente;";
+                    $values = array(
+                        'id_paciente'   => $paciente['id_paciente'],
+                    );
+
+                    $result = $db->query($phql,$values);
+                    $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result){
+                        while($data = $result->fetch()){
+                            $nombre_paciente    = $data['nombre_paciente'];
+                        }
+                    }
+
+                    //  SE AGENDAN LAS CITAS DEL PACIENTE
+                    $phql   = " SELECT * FROM fn_programar_citas(:id_paciente,:id_locacion,:fecha_inicio,:fecha_termino,:clave_usuario) 
+                                ;";
+                    $values = array(
+                        'id_paciente'   => $paciente['id_paciente'],
+                        'id_locacion'   => $paciente['id_locacion'],
+                        'fecha_inicio'  => $fecha_inicio,
+                        'fecha_termino' => $arr_fechas_locacion[$paciente['id_locacion']]['fecha_limite'],
+                        'clave_usuario' => $clave_usuario
+                    );
+
+                    $result = $db->query($phql,$values);
+                    $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result){
+                        while($data = $result->fetch()){
+                            $mensaje_original   = $data['fn_programar_citas'];
+                            $mensaje            = preg_replace('/\d+ paciente\(s\)/', $nombre_paciente, $mensaje_original);
+                            $arr_return['mensaje_ok'][] = $mensaje;
+                        }
+                    }
+                }catch(\Exception $err){
+                    $arr_return['mensaje_error'][]  = FuncionesGlobales::raiseExceptionMessage($err->getMessage());
+                }
+            }
+    
+            // RESPUESTA JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
             $response = new Response();
             $response->setJsonContent($e->getMessage());
             $response->setStatusCode(400, 'not found');
