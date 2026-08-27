@@ -1,4 +1,5 @@
-CREATE OR REPLACE FUNCTION fn_saldo_favor_paciente(p_id_paciente INT)
+-- DROP FUNCTION fn_saldo_favor_paciente(INT);
+CREATE OR REPLACE FUNCTION fn_saldo_favor_paciente(p_id_paciente INT,p_tipo_abono INT)
 RETURNS NUMERIC AS $$
 DECLARE
     v_saldo_favor   NUMERIC;
@@ -15,7 +16,8 @@ BEGIN
         WHERE a.id = t1.id_abono 
         AND (t1.estatus = 1 OR (t1.estatus = 0 AND t1.tipo_cancelacion = 2)) 
     ) b ON TRUE
-    WHERE a.id_paciente = p_id_paciente AND a.tipo_abono = 1
+    WHERE a.id_paciente = p_id_paciente 
+    AND (p_tipo_abono IS NULL OR a.tipo_abono = p_tipo_abono)
     AND a.estatus = 1;
 
     -- Retornar saldo pendiente, mínimo 0

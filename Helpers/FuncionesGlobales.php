@@ -199,7 +199,7 @@ class FuncionesGlobales {
 
             //  SE BUSCAN SI EL PACIENTE TIENE SALDO A FAVOR
             $saldo_favor    = 0;
-            $phql   = "SELECT * FROM fn_saldo_favor_paciente(:id_paciente);";
+            $phql   = "SELECT * FROM fn_saldo_favor_paciente(:id_paciente,null);";
             $result = $conexion->query($phql,array(
                 'id_paciente'   => $id_paciente
             ));
@@ -232,7 +232,7 @@ class FuncionesGlobales {
                         ) b ON TRUE
                         WHERE a.id_paciente = :id_paciente
                         AND a.estatus = 1 AND a.monto - COALESCE(b.monto_usado, 0) > 0
-                        ORDER BY a.fecha_hora_pago;";
+                        ORDER BY a.tipo_abono DESC,a.fecha_hora_pago;";
 
             $arr_abonos = array();
             $result = $conexion->query($phql,array(

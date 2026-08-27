@@ -42,8 +42,8 @@ return function (Micro $app,$di) {
                 'saldo_favor_beca'  => array()
             );
 
-            //  SE BUSCA EL SALDO A FAVOR DEL PACIENTE
-            $phql   = "SELECT * FROM fn_saldo_favor_paciente(:id_paciente);";
+            //  SE BUSCA EL SALDO A FAVOR DEL PACIENTE DE PAGOS ORDINARIOS
+            $phql   = "SELECT * FROM fn_saldo_favor_paciente(:id_paciente,1);";
             $result = $db->query($phql,array(
                 'id_paciente'   => $id_paciente
             ));
@@ -56,16 +56,7 @@ return function (Micro $app,$di) {
             }
 
             //  SE BUSCA EL SALDO A FAVOR DE CADA BECA Y SUS RESPECTIVAS CITAS A EXCLUIR
-            $phql   = " SELECT 
-                            SUM((a.monto - b.monto_usado)) as total_disponible
-                        FROM tbabonos a 
-                        LEFT JOIN LATERAL (
-                            SELECT SUM(t1.monto) AS monto_usado 
-                            FROM tbabonos_movimientos t1
-                            WHERE a.id = t1.id_abono
-                            AND (t1.estatus = 1 OR (t1.estatus = 0 AND t1.tipo_cancelacion = 2))
-                        ) b ON TRUE
-                        WHERE a.id_paciente = :id_paciente AND a.tipo_abono = 2";
+            $phql   = "SELECT * FROM fn_saldo_favor_paciente(:id_paciente,2);";
 
             $result = $db->query($phql,array(
                 'id_paciente'   => $id_paciente
@@ -75,7 +66,7 @@ return function (Micro $app,$di) {
             if ($result){
                 while($data = $result->fetch()){
                     //  SE BUSCA SI EN LA APLICACION DE BECA SE EXCLUYERON CITAS
-                    $arr_return['saldo_favor_beca'] = $data['total_disponible'];
+                    $arr_return['saldo_favor_beca'] = $data['fn_saldo_favor_paciente'];
                 }
             }
 
@@ -383,7 +374,7 @@ return function (Micro $app,$di) {
 
             //  SE BUSCA EL SALDO A FAVOR DEL PACIENTE
             $saldo_favor_calculado  = 0;
-            $phql   = "SELECT * FROM fn_saldo_favor_paciente(:id_paciente);";
+            $phql   = "SELECT * FROM fn_saldo_favor_paciente(:id_paciente,null);";
             $result = $db->query($phql,array(
                 'id_paciente'   => $id_paciente
             ));
@@ -396,7 +387,7 @@ return function (Micro $app,$di) {
             }
 
             //  @TODO FUNCION SALDO A FAVOR SE VALIDA QUE EL SALDO A FAVOR DEL USUARIO SEA EL MISMO
-            if ($saldo_favor_calculado != $obj_info_pago['saldo_favor']){
+            if ($saldo_favor_calculado != $obj_info_pago['total_saldo_favor']){
                 throw new Exception("El saldo a favor del paciente a cambiado, refresca la vista para actualizar la información");
             }
 
@@ -435,7 +426,7 @@ return function (Micro $app,$di) {
                             WHERE a.id_paciente = :id_paciente
                             AND a.estatus = 1
                             AND (a.monto - COALESCE(b.monto_usado, 0)) > 0
-                            ORDER BY a.fecha_hora_pago
+                            ORDER BY a.tipo_abono DESC,a.fecha_hora_pago
                             ;";
 
                 $result_saldo_favor = $db->query($phql,array(
@@ -942,6 +933,7 @@ return function (Micro $app,$di) {
             $observaciones_cancelacion  = $request->getPost('observaciones_cancelacion');
             $usuario_solicitud          = $request->getPost('usuario_solicitud');
             $tipo_cancelacion           = $request->getPost('tipo_cancelacion');
+            $id_paciente                = $request->getPost('id_paciente');
 
             //  VALIDACION DE CAMPOS
             if (empty($arr_id_abono_movimiento) && count($arr_id_abono_movimiento) == 0){
@@ -954,6 +946,10 @@ return function (Micro $app,$di) {
 
             if (empty($tipo_cancelacion)){
                 throw new Exception('Tipo de movimiento vacio');
+            }
+
+            if (empty($id_paciente)){
+                throw new Exception('Paciente vacio');
             }
 
             $phql   = "SELECT * FROM ctusuarios WHERE clave = :clave_usuario";
@@ -977,9 +973,10 @@ return function (Micro $app,$di) {
                                 a.estatus as estatus_movto,
                                 d.estatus as estatus_abono,
                                 a.id_abono,
-                                a.id_agenda_cita
+                                a.id_agenda_cita,
+                                a.ticket_folio
                             FROM tbabonos_movimientos a
-                            LEFT JOIN ctvariables_sistema b ON b.clave = 'dias_movimientos_citas_vencidas'
+                            LEFT JOIN ctvariables_sistema b ON b.clave = 'dias_cancelacion_devolucion_abonos'
                             LEFT JOIN tbagenda_citas c ON a.id_agenda_cita = c.id
                             LEFT JOIN tbabonos d ON a.id_abono = d.id
                             WHERE a.id = :id_abono_movimiento;";
@@ -991,6 +988,28 @@ return function (Micro $app,$di) {
 
                 if ($result_validacion){
                     while($data_validacion = $result_validacion->fetch()){
+
+                        //  SE VALIDA SI EL MOVIMIENTO PERTENECE AL ULTIMO ABONO HECHO POR EL PACIENTE
+                        $phql   = " SELECT 
+                                        ticket_folio 
+                                    FROM tbabonos 
+                                    WHERE 
+                                        id_paciente = :id_paciente AND 
+                                        estatus = 1
+                                    ORDER BY id DESC 
+                                    LIMIT 1";
+
+                        $result_ultimo_abono    = $db->query($phql,array('id_paciente' => $id_paciente));
+                        $result_ultimo_abono->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                        if ($result_ultimo_abono){
+                            while($data_ultimo_abono = $result_ultimo_abono->fetch()){
+                                if ($data_validacion['ticket_folio'] != $data_ultimo_abono['ticket_folio']){
+                                    throw new Exception('Solo se pueden realizar cancelaciones o devoluciones del ultimo pago realizado por el paciente');
+                                }
+                            }
+                        }
+                        
                         //  FECHA CADUCADA
                         if ($data_validacion['fecha_caducada'] == 1){
                             throw new Exception('Se cumplió la fecha limite para permitir cambios a los movimientos');
