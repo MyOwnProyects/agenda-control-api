@@ -17,22 +17,17 @@ BEGIN
     --  NUMERO DE TICKETS CREADOS EN EL AÑO EN CURSO
     v_letra := '';
     IF p_tipo_ticket = 'pago' THEN
-        SELECT COUNT(*) + 1 FROM tbtickets_pagos 
-        WHERE EXTRACT(YEAR FROM fecha_captura) = v_anio_actual AND
-        folio ILIKE 'T-%'
-        INTO v_num_registros;
-
         v_letra := 'T';
     END IF;
 
     IF p_tipo_ticket = 'beca' THEN
-        SELECT COUNT(*) + 1 FROM tbtickets_pagos 
-        WHERE EXTRACT(YEAR FROM fecha_captura) = v_anio_actual AND
-        folio ILIKE 'B-%'
-        INTO v_num_registros;
-
         v_letra := 'B';
     END IF;
+
+    --  SE OBTIENE EL NUMERO DE REGISTROS Y ESTE SE LE SUMA 1, PARA OBTENER EL FOLIO DEL TICKET
+    SELECT COUNT(*) + 1 FROM tbtickets_pagos 
+    WHERE EXTRACT(YEAR FROM fecha_captura) = v_anio_actual
+    INTO v_num_registros;
 	
 
     SELECT v_letra||'-'|| v_anio_actual || LPAD(v_num_registros::TEXT, 4, '0')

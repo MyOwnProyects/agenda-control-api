@@ -528,6 +528,19 @@ return function (Micro $app,$di) {
                     }
 
                     $fecha_hora_transferencia   = $fecha_transferencia.' '.$hora_transferencia;
+
+                    //  VERIFICA QUE LA FECHA HORA TRANSFERENCIA NO SEA MAYOR A LA ACTUAL
+                    $phql   = "SELECT CASE WHEN :fecha_hora::DATE > current_date::DATE THEN 0 ELSE 1 END as fecha_valida";
+                    $result = $conexion->query($phql, array('fecha_hora' => $fecha_hora_transferencia));
+                    $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+                    if ($result){
+                        while($data = $result->fetch()){
+                            if ($data['fecha_valida'] == 0){
+                                throw new Exception('La fecha de transferencia no puede ser mayor al día de hoy');
+                            }
+                        }
+                    }
                 }
 
                 // Validar que sea un monto monetario válido y mayor a 0

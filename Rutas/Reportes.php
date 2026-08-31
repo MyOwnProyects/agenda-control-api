@@ -378,10 +378,26 @@ return function (Micro $app,$di) {
             $id_locacion            = $request->getQuery('id_locacion');
             $rango_fechas           = $request->getQuery('rango_fechas') ?? null;
             $incluir_movtos_futuros = $request->getQuery('incluir_movtos_futuros') ?? null;
+            $array_tipo_abono       = $request->getQuery('array_tipo_abono') ?? null;
 
             if (empty($rango_fechas)){
                 throw new Exception('Rango de fechas vacio');
             }
+
+            if (empty($array_tipo_abono)){
+                throw new Exception('Seleccione al menos un tipo de ingreso');
+            }
+
+            //  SANITIZAR TIPO ABONO
+            $filtro_tipo_abono  = array();
+            foreach($array_tipo_abono as $tipo_abono){
+                if (empty($tipo_abono) || !is_numeric($tipo_abono)){
+                    throw new Exception('Formato de abono no valido');
+                }
+            }
+
+            $filtro_tipo_abono  = $array_tipo_abono;
+            $filtro_tipo_abono  = '{' . implode(',', $filtro_tipo_abono) . '}';
 
             $dias_semana        = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
             $arr_estatus_asistencia = [
@@ -398,9 +414,17 @@ return function (Micro $app,$di) {
                 2   => 'PENDIENTE DE AGENDAR',
             );
 
+            $arr_tipo_abono = array(
+                1   => 'PAGO',
+                2   => 'BECA',
+                3   => 'DESCUENTO',
+                4   => 'AJUSTE'
+            );
+
             $values = [
                 'fecha_inicio'  => $rango_fechas['fecha_inicio'],
                 'fecha_termino' => $rango_fechas['fecha_termino'],
+                'tipo_abono'    => $filtro_tipo_abono
             ];
 
             $filtro = '';
@@ -422,6 +446,8 @@ return function (Micro $app,$di) {
                         WHERE a.fecha_hora_pago::DATE BETWEEN :fecha_inicio AND :fecha_termino
                         AND a.estatus = 1
                         $filtro
+                        AND 
+                        a.tipo_abono = ANY(:tipo_abono)
                         GROUP BY a.fecha_hora_pago";
     
             $result = $db->query($phql,$values);
@@ -454,13 +480,20 @@ return function (Micro $app,$di) {
                             a.monto,
                             a.metodo_pago,
                             a.fecha_hora_pago,
-                            a.estatus,
+                            (   CASE 
+                                    WHEN a.fecha_cancelacion IS NULL THEN 1
+                                    WHEN a.fecha_cancelacion::DATE > :fecha_termino THEN 1
+                                    ELSE 0 
+                                END ) as estatus,
                             a.tipo_cancelacion,
                             a.fecha_cancelacion,
-                            (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo
+                            (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) as nombre_completo,
+                            a.tipo_abono
                         FROM tbabonos a 
                         LEFT JOIN ctpacientes b ON a.id_paciente = b.id
-                        WHERE a.fecha_hora_pago::DATE BETWEEN :fecha_inicio AND :fecha_termino AND a.tipo_abono = 1 $filtro 
+                        WHERE (a.fecha_hora_pago::DATE BETWEEN :fecha_inicio AND :fecha_termino )
+                        $filtro 
+                        AND a.tipo_abono = ANY(:tipo_abono)
                         ORDER BY a.fecha_hora_pago;";
 
             $result = $db->query($phql,$values);
@@ -468,8 +501,17 @@ return function (Micro $app,$di) {
 
             if ($result){
                 while($data_abonos = $result->fetch()){
+                    $data_abonos['label_tipo_abono']    = $arr_tipo_abono[$data_abonos['tipo_abono']];
                     $data_abonos['monto_disponible']    = $data_abonos['monto'];
                     $data_abonos['fecha_hora_pago']     = FuncionesGlobales::formatearFecha($data_abonos['fecha_hora_pago'],'d/m/Y H:i');
+
+                    //  ESTO EN CASO DE QUE POR FECHAS EL ESTATUS DEL PAGO SEA 1
+                    //  PERO ACTUALMENTE ESTA ESTATUS 0, QUITAMOS CAMPOS PARA EVITAR
+                    //  CONFUSIONES
+                    if ($data_abonos['estatus'] == 1){
+                        $data_abonos['tipo_cancelacion']    = null;
+                        $data_abonos['fecha_cancelacion']   = null;
+                    }
 
                     $label_estatus_abono    = '';
 

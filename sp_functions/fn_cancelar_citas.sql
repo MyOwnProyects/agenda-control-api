@@ -11,7 +11,8 @@ BEGIN
     UPDATE tbabonos_movimientos SET 
         estatus = 0,
         id_usuario_cancelacion = NEW.id_usuario_cancelacion,
-        fecha_cancelacion = NEW.fecha_cancelacion
+        fecha_cancelacion = NEW.fecha_cancelacion,
+        tipo_cancelacion = 1
     WHERE id_agenda_cita = NEW.id AND estatus <> 0;
 
     RETURN NULL;
