@@ -514,7 +514,7 @@ return function (Micro $app,$di) {
                 $referenca_transferencia    = null;
                 $fecha_hora_transferencia   = null;
 
-                if ($metodo_pago['index'] != 'pago_efectivo'){
+                if ($metodo_pago['index'] != 'pago_efectivo' && $monto > 0){
                     $referenca_transferencia    = $obj_info_pago['referencia_transferencia'];
                     $referenca_transferencia    = trim($referenca_transferencia);
                     $fecha_transferencia        = $obj_info_pago['fecha_transferencia'];

@@ -1403,7 +1403,7 @@ return function (Micro $app,$di) {
             }
 
             //  SE UPDATEA EL COSTO TOTAL
-            $phql   = "UPDATE tbagenda_citas SET total = :calcula_total::numeric, pagada = (CASE WHEN :calcula_total::numeric = 0 THEN 1 ELSE 0 END) WHERE id = :id_agenda_cita";
+            $phql   = "UPDATE tbagenda_citas SET total = :calcula_total::numeric, pagada = (CASE WHEN :calcula_total::numeric = 0 THEN 1 ELSE 0 END), fecha_pago = (CASE WHEN :calcula_total::numeric = 0 THEN now() ELSE null END) WHERE id = :id_agenda_cita";
             $conexion->execute($phql,array(
                 'calcula_total'     => $calcula_total,
                 'id_agenda_cita'    => $id_agenda_cita
