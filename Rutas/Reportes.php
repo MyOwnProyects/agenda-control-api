@@ -444,7 +444,7 @@ return function (Micro $app,$di) {
                             SUM (a.monto) as total_pagos
                         FROM tbabonos a 
                         WHERE a.fecha_hora_pago::DATE BETWEEN :fecha_inicio AND :fecha_termino
-                        AND a.estatus = 1
+                        AND (a.estatus = 1 OR (a.estatus = 0 AND fecha_cancelacion > :fecha_termino ))
                         $filtro
                         AND 
                         a.tipo_abono = ANY(:tipo_abono)
@@ -648,6 +648,91 @@ return function (Micro $app,$di) {
             $arr_return = array();
             while ($row = $result->fetch()) {
                 $row['fecha_envio']  = FuncionesGlobales::formatearFecha($row['fecha_envio'],'d/m/Y H:i');
+
+                $arr_return[]   = $row;
+            }
+    
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($arr_return);
+            $response->setStatusCode(200, 'OK');
+            return $response;
+        }catch (\Exception $e){
+            // Devolver los datos en formato JSON
+            $response = new Response();
+            $response->setJsonContent($e->getMessage());
+            $response->setStatusCode(400, 'not found');
+            return $response;
+        }
+        
+    });
+
+    $app->get('/reportes/pacientes_becas', function () use ($app,$db,$request) {
+        try{
+            //  REPORTE GENERAL DE CITAS EN EL RANGO DE FECHAS
+            //  INCLUYE INFORMACION GENERAL DEL PACIENTES Y DE LA CITA
+            $id_locacion    = $request->getQuery('id_locacion') ?? null;
+            $rango_fechas   = $request->getQuery('rango_fechas') ?? null;
+
+            $values         = array();
+            
+            $phql   = " SELECT 
+                            a.monto_asignado,
+                            a.fecha_inicio,
+                            a.estatus,
+                            a.fecha_captura,
+                            a.fecha_cancelacion,
+                            a.obervaciones_cancelacion,
+                            (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) AS nombre_paciente,
+                            (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) AS nombre_usuario,
+                            (d.primer_apellido|| ' ' ||COALESCE(d.segundo_apellido,'')||' '||d.nombre) AS nombre_usuario_cancelacion,
+                            COALESCE(e.monto_utilizado,0) AS monto_utilizado,
+                            f.clave as clave_beca,
+                            f.nombre as nombre_beca
+                        FROM tbpaciente_becas a
+                        LEFT JOIN ctpacientes b ON a.id_paciente = b.id 
+                        LEFT JOIN ctusuarios c ON a.id_usuario_captura = c.id
+                        LEFT JOIN ctusuarios d ON a.id_usuario_cancelacion = d.id
+                        LEFT JOIN LATERAL (
+                            SELECT 
+                                SUM((CASE WHEN t2.estatus = 1 THEN t2.monto ELSE 0 END)) as monto_utilizado
+                            FROM tbabonos t1 
+                            LEFT JOIN tbabonos_movimientos t2 ON t1.id = t2.id_abono
+                            WHERE t1.id_paciente_beca = a.id AND t1.estatus = 1
+                        ) e ON 1 = 1
+                        LEFT JOIN ctbecas f ON a.id_beca = f.id
+                        WHERE 1 = 1 
+                        ";
+    
+            if (!empty($id_locacion)) {
+                $phql           .= "    AND EXISTS (
+                                            SELECT 1 FROM tbabonos t1 
+                                            LEFT JOIN tbabonos_movimientos t2 ON t1.id = t2.id_abono
+                                            LEFT JOIN tbagenda_citas t3 ON t2.id_agenda_cita = t3.id
+                                            WHERE a.id = t1.id_paciente_beca AND t3.id_locacion = :id_locacion
+                                        ) ";
+                $values['id_locacion']  = $id_locacion;
+            }
+
+            if (!empty($rango_fechas) && $rango_fechas['fecha_inicio'] != null){
+                $phql   .= ' AND a.fecha_captura >= :fecha_inicio ';
+            }
+
+            if (!empty($rango_fechas) && $rango_fechas['fecha_termino'] != null){
+                $phql   .= ' AND a.fecha_captura <= :fecha_termino ';
+            }
+
+            $phql   .= ' ORDER BY a.fecha_captura ASC, b.primer_apellido ASC, b.segundo_apellido ASC, b.nombre ASC';
+
+            $result = $db->query($phql,$values);
+            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
+
+            $arr_return = array();
+            while ($row = $result->fetch()) {
+                $row['fecha_captura']   = FuncionesGlobales::formatearFecha($row['fecha_captura'],'d/m/Y H:i');
+                $row['fecha_inicio']    = FuncionesGlobales::formatearFecha($row['fecha_inicio'],'d/m/Y H:i');
+                $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVA' : 'CANCELADA';
+                $row['label_monto']     = FuncionesGlobales::formatearDecimal($row['monto_asignado']);
 
                 $arr_return[]   = $row;
             }
