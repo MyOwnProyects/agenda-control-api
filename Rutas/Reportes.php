@@ -549,7 +549,7 @@ return function (Micro $app,$di) {
 
                     }
 
-                    $phql   .= " ORDER BY a.fecha_hora_pago; ";
+                    $phql   .= " ORDER BY a.fecha_hora_pago,a.id; ";
 
                     $result_movtos  = $db->query($phql,$values_movtos);
                     $result_movtos->setFetchMode(\Phalcon\Db\Enum::FETCH_ASSOC);
@@ -682,11 +682,11 @@ return function (Micro $app,$di) {
                             a.estatus,
                             a.fecha_captura,
                             a.fecha_cancelacion,
-                            a.obervaciones_cancelacion,
+                            a.observaciones_cancelacion,
                             (b.primer_apellido|| ' ' ||COALESCE(b.segundo_apellido,'')||' '||b.nombre) AS nombre_paciente,
                             (c.primer_apellido|| ' ' ||COALESCE(c.segundo_apellido,'')||' '||c.nombre) AS nombre_usuario,
                             (d.primer_apellido|| ' ' ||COALESCE(d.segundo_apellido,'')||' '||d.nombre) AS nombre_usuario_cancelacion,
-                            COALESCE(e.monto_utilizado,0) AS monto_utilizado,
+                            (a.monto_asignado - (COALESCE(e.monto_utilizado,0))) AS monto_disponible,
                             f.clave as clave_beca,
                             f.nombre as nombre_beca
                         FROM tbpaciente_becas a
@@ -715,11 +715,13 @@ return function (Micro $app,$di) {
             }
 
             if (!empty($rango_fechas) && $rango_fechas['fecha_inicio'] != null){
-                $phql   .= ' AND a.fecha_captura >= :fecha_inicio ';
+                $phql   .= ' AND a.fecha_captura::DATE >= :fecha_inicio ';
+                $values['fecha_inicio'] = $rango_fechas['fecha_inicio'];
             }
 
             if (!empty($rango_fechas) && $rango_fechas['fecha_termino'] != null){
-                $phql   .= ' AND a.fecha_captura <= :fecha_termino ';
+                $phql   .= ' AND a.fecha_captura::DATE <= :fecha_termino ';
+                $values['fecha_termino']    = $rango_fechas['fecha_termino'];
             }
 
             $phql   .= ' ORDER BY a.fecha_captura ASC, b.primer_apellido ASC, b.segundo_apellido ASC, b.nombre ASC';
@@ -729,10 +731,11 @@ return function (Micro $app,$di) {
 
             $arr_return = array();
             while ($row = $result->fetch()) {
-                $row['fecha_captura']   = FuncionesGlobales::formatearFecha($row['fecha_captura'],'d/m/Y H:i');
-                $row['fecha_inicio']    = FuncionesGlobales::formatearFecha($row['fecha_inicio'],'d/m/Y H:i');
-                $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVA' : 'CANCELADA';
-                $row['label_monto']     = FuncionesGlobales::formatearDecimal($row['monto_asignado']);
+                $row['fecha_captura']   = FuncionesGlobales::formatearFecha($row['fecha_captura'],'d/m/Y');
+                $row['fecha_inicio']    = FuncionesGlobales::formatearFecha($row['fecha_inicio'],'d/m/Y');
+                $row['fecha_cancelacion']   = FuncionesGlobales::formatearFecha($row['fecha_cancelacion'],'d/m/Y');
+                $row['label_estatus']       = $row['estatus'] == 1 ? 'ACTIVA' : 'CANCELADA';
+                $row['label_monto']         = FuncionesGlobales::formatearDecimal($row['monto_asignado']);
 
                 $arr_return[]   = $row;
             }
