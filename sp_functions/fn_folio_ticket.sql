@@ -24,6 +24,10 @@ BEGIN
         v_letra := 'B';
     END IF;
 
+    IF p_tipo_ticket = 'descuento' THEN
+        v_letra := 'D';
+    END IF;
+
     --  SE OBTIENE EL NUMERO DE REGISTROS Y ESTE SE LE SUMA 1, PARA OBTENER EL FOLIO DEL TICKET
     SELECT COUNT(*) + 1 FROM tbtickets_pagos 
     WHERE EXTRACT(YEAR FROM fecha_captura) = v_anio_actual
