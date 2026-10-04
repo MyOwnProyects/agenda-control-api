@@ -114,6 +114,7 @@ return function (Micro $app,$di) {
             while ($row = $result->fetch()) {
                 $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVA' : 'INACTIVA';
                 $row['label_tipo_beca'] = $row['tipo_beca'] == 1 ? 'IMPORTE' : 'PORCENTAJE';
+                $row['label_tipo']      = $row['tipo_beca'] == 1 ? 'IMPORTE' : 'PORCENTAJE';
                 $data[]                     = $row;
             }
     
@@ -307,7 +308,7 @@ return function (Micro $app,$di) {
 
     //  ASIGNACION DE BECAS
     // Ruta principal para obtener todos los usuarios
-    $app->get('/paciente_becas/count', function () use ($app,$db,$request) {
+    $app->get('/paciente_beneficios/count', function () use ($app,$db,$request) {
         try{
 
             $id             = $request->getQuery('id');
@@ -318,21 +319,47 @@ return function (Micro $app,$di) {
             }
         
             // Definir el query SQL
-            $phql   = "SELECT 
-                            COUNT(1) as num_registros
-                        FROM tbpaciente_becas a 
-                        WHERE 1 = 1 ";
-            $values = array();
-    
+            $phql = "
+                SELECT SUM(num_registros) AS num_registros
+                FROM (
+
+                    SELECT COUNT(1) AS num_registros
+                    FROM tbpaciente_becas a
+                    WHERE 1 = 1
+            ";
+
+            $values = [];
+
             if (is_numeric($id)){
-                $phql           .= " AND a.id = :id";
-                $values['id']   = $id;
+                $phql .= " AND a.id = :id";
+                $values['id'] = $id;
             }
 
             if (is_numeric($id_paciente)){
-                $phql                   .= " AND a.id_paciente = :id_paciente";
-                $values['id_paciente']  = $id_paciente;
+                $phql .= " AND a.id_paciente = :id_paciente";
+                $values['id_paciente'] = $id_paciente;
             }
+
+            $phql .= "
+
+                    UNION ALL
+
+                    SELECT COUNT(1) AS num_registros
+                    FROM tbpaciente_descuentos b
+                    WHERE 1 = 1
+            ";
+
+            if (is_numeric($id)){
+                $phql .= " AND b.id = :id";
+            }
+
+            if (is_numeric($id_paciente)){
+                $phql .= " AND b.id_paciente = :id_paciente";
+            }
+
+            $phql .= "
+
+                ) t";
     
             // Ejecutar el query y obtener el resultado
             $result = $db->query($phql,$values);
@@ -360,50 +387,139 @@ return function (Micro $app,$di) {
     });
 
     // Ruta principal para obtener todos los registros
-    $app->get('/paciente_becas/show', function () use ($app,$db,$request) {
+    $app->get('/paciente_beneficios/show', function () use ($app,$db,$request) {
         try{
 
             $id             = $request->getQuery('id');
             $id_paciente    = $request->getQuery('id_paciente');
         
             // Definir el query SQL
-            $phql   = " SELECT 
-                            a.*,
-                            (b.clave|| ' - ' || b.nombre) as beca,
-                            COALESCE(c.monto_usado,0) as monto_usado,
-                            b.tipo_beca,
-                            (a.monto_asignado - c.monto_usado) as monto_disponible,
-                            e.detalle,
-                            e.folio,
-                            (f.primer_apellido|| ' ' ||COALESCE(f.segundo_apellido,'')||' '||f.nombre) as nombre_completo,
-                            (g.primer_apellido|| ' ' ||COALESCE(g.segundo_apellido,'')||' '||g.nombre) as nombre_usuario
-                        FROM tbpaciente_becas a 
-                        LEFT JOIN ctbecas b ON a.id_beca = b.id
-                        LEFT JOIN LATERAL (
-                            SELECT SUM(t1.monto) AS monto_usado 
-                            FROM tbabonos_movimientos t1
-                            LEFT JOIN tbabonos t2 ON t1.id_abono = t2.id
-                            WHERE a.id = t2.id_paciente_beca 
-                            AND (t1.estatus = 1 OR (t1.estatus = 0 AND t1.tipo_cancelacion = 2))
-                        ) c ON TRUE
-                        LEFT JOIN tbabonos d ON a.id = d.id_paciente_beca
-                        LEFT JOIN tbtickets_pagos e ON d.ticket_folio = e.folio
-                        LEFT JOIN ctpacientes f ON a.id_paciente = f.id
-                        LEFT JOIN ctusuarios g ON a.id_usuario_captura = d.id
-                        WHERE 1 = 1 ";
+            $phql = "
+                SELECT *
+                FROM (
+                    SELECT 
+                        'beca' AS tipo_beneficio,
+                        a.id AS id_beneficio,
+                        a.monto_asignado,
+                        a.estatus,
+                        (b.clave || ' - ' || b.nombre) AS nombre_beneficio,
+                        COALESCE(c.monto_usado, 0) AS monto_usado,
+                        b.tipo_beca AS tipo,
+                        (a.monto_asignado - COALESCE(c.monto_usado, 0)) AS monto_disponible,
+                        e.detalle,
+                        e.folio,
+                        (f.primer_apellido || ' ' || COALESCE(f.segundo_apellido,'') || ' ' || f.nombre) AS nombre_completo,
+                        (g.primer_apellido || ' ' || COALESCE(g.segundo_apellido,'') || ' ' || g.nombre) AS nombre_usuario,
+                        a.fecha_captura
+                    FROM tbpaciente_becas a
+
+                    LEFT JOIN ctbecas b
+                        ON a.id_beca = b.id
+
+                    LEFT JOIN LATERAL (
+                        SELECT
+                            SUM(t1.monto) AS monto_usado
+                        FROM tbabonos_movimientos t1
+                        INNER JOIN tbabonos t2
+                            ON t1.id_abono = t2.id
+                        WHERE t2.id_paciente_beca = a.id
+                        AND (
+                                t1.estatus = 1
+                            OR (t1.estatus = 0 AND t1.tipo_cancelacion = 2)
+                        )
+                    ) c ON TRUE
+
+                    LEFT JOIN tbabonos d
+                        ON a.id = d.id_paciente_beca
+
+                    LEFT JOIN tbtickets_pagos e
+                        ON d.ticket_folio = e.folio
+
+                    LEFT JOIN ctpacientes f
+                        ON a.id_paciente = f.id
+
+                    LEFT JOIN ctusuarios g
+                        ON a.id_usuario_captura = g.id
+
+                    WHERE 1 = 1
+            ";
+
             $values = array();
-    
-            if (is_numeric($id)){
-                $phql           .= " AND a.id = :id";
-                $values['id']   = $id;
+
+            if (is_numeric($id)) {
+                $phql .= " AND a.id = :id";
+                $values['id'] = $id;
             }
 
-            if (is_numeric($id_paciente)){
-                $phql                   .= "AND a.id_paciente = :id_paciente";
-                $values['id_paciente']  = $id_paciente;
+            if (is_numeric($id_paciente)) {
+                $phql .= " AND a.id_paciente = :id_paciente";
+                $values['id_paciente'] = $id_paciente;
             }
-            
-            $phql   .= ' ORDER BY a.fecha_captura DESC ';
+
+            $phql .= "
+
+                    UNION ALL
+
+                    SELECT
+                        'descuento' AS tipo_beneficio,
+                        h.id AS id_beneficio,
+                        h.monto_asignado,
+                        h.estatus,
+                        (i.clave || ' - ' || i.nombre) AS nombre_beneficio,
+                        COALESCE(j.monto_usado, 0) AS monto_usado,
+                        i.tipo AS tipo,
+                        (h.monto_asignado - COALESCE(j.monto_usado, 0)) AS monto_disponible,
+                        k.detalle,
+                        k.folio,
+                        (l.primer_apellido || ' ' || COALESCE(l.segundo_apellido,'') || ' ' || l.nombre) AS nombre_completo,
+                        (m.primer_apellido || ' ' || COALESCE(m.segundo_apellido,'') || ' ' || m.nombre) AS nombre_usuario,
+                        h.fecha_captura
+
+                    FROM tbpaciente_descuentos h
+
+                    LEFT JOIN ctdescuentos i
+                        ON h.id_descuento = i.id
+
+                    LEFT JOIN LATERAL (
+                        SELECT
+                            SUM(t1.monto) AS monto_usado
+                        FROM tbabonos_movimientos t1
+                        INNER JOIN tbabonos t2
+                            ON t1.id_abono = t2.id
+                        WHERE t2.id_paciente_descuento = h.id
+                        AND (
+                                t1.estatus = 1
+                            OR (t1.estatus = 0 AND t1.tipo_cancelacion = 2)
+                        )
+                    ) j ON TRUE
+
+                    LEFT JOIN tbabonos n
+                        ON h.id = n.id_paciente_descuento
+
+                    LEFT JOIN tbtickets_pagos k
+                        ON n.ticket_folio = k.folio
+
+                    LEFT JOIN ctpacientes l
+                        ON h.id_paciente = l.id
+
+                    LEFT JOIN ctusuarios m
+                        ON h.id_usuario_captura = m.id
+
+                    WHERE 1 = 1
+            ";
+
+            if (is_numeric($id)) {
+                $phql .= " AND h.id = :id";
+            }
+
+            if (is_numeric($id_paciente)) {
+                $phql .= " AND h.id_paciente = :id_paciente";
+            }
+
+            $phql .= "
+                ) AS beneficios
+                ORDER BY fecha_captura DESC
+            ";
 
             if ($request->hasQuery('offset')){
                 $phql   .= " LIMIT ".$request->getQuery('length').' OFFSET '.$request->getQuery('offset');

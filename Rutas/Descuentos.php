@@ -113,7 +113,15 @@ return function (Micro $app,$di) {
             $data = [];
             while ($row = $result->fetch()) {
                 $row['label_estatus']   = $row['estatus'] == 1 ? 'ACTIVA' : 'INACTIVA';
-                $row['label_tipo']      = $row['tipo'] == 1 ? 'AJUSTE' : 'DESCUENTO';
+                $row['label_tipo']      = $row['tipo'] == 1 ? 'AJUSTE POR ' : 'DESCUENTO POR ';
+                
+                if ($row['importe'] == 1){
+                    $row['label_tipo']  .= 'IMPORTE';
+                }
+
+                if ($row['porcentaje'] == 1){
+                    $row['label_tipo']  .= 'PORCENTAJE';
+                }
                 $data[]                     = $row;
             }
     
@@ -457,14 +465,6 @@ return function (Micro $app,$di) {
                 [
                     'label_table'   => 'EFECTIVO',
                     'index'         => 'pago_efectivo'
-                ],
-                [
-                    'label_table'   => 'TRANSFERENCIA',
-                    'index'         => 'pago_transferencia'
-                ],
-                [
-                    'label_table'   => 'TARJETA',
-                    'index'         => 'pago_tarjeta'
                 ]
             );
 
@@ -667,7 +667,7 @@ return function (Micro $app,$di) {
                     'monto'         => $monto,
                     'tipo_abono'    => 2,
                     'id_paciente_descuento' => $id_paciente_descuento,
-                    'metodo_pago'           => $metodo_pago['label_table'],
+                    'metodo_pago'           => null,
                     'id_usuario_captura'    => $id_usuario_solicitud,
                     'ticket_folio'          => $folio_generado,
                     'fecha_hora_pago'       => $fecha_hora_transferencia == '' || $fecha_hora_transferencia == null ? 'now()' : $fecha_hora_transferencia,
